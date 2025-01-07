@@ -1,0 +1,23 @@
+[package]
+name = "aiseg2-influxdb2-forwarder"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.95"
+base64 = "0.22.1"
+chrono = "0.4.39"
+diqwest = { version = "3.1.0", features = ["blocking"] }
+envy = "0.4.2"
+reqwest = { version = "0.12.12", features = ["json"] }
+scraper = "0.22.0"
+serde = "1.0.217"
+serde_derive = "1.0.217"
+tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros", "signal"] }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+influxdb2 = "0.5.2"
+futures = "0.3.31"
+
+[dev-dependencies]
+serial_test = "3.2.0"

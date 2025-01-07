@@ -1,0 +1,9 @@
+use flake
+
+export AISEG2_URL=
+export AISEG2_USER=
+export AISEG2_PASSWORD=
+export INFLUXDB_URL=
+export INFLUXDB_TOKEN=
+export INFLUXDB_ORG=
+export INFLUXDB_BUCKET=

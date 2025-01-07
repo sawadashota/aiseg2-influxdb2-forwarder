@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'influxdbv2'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      foldersFromFilesStructure: true
+      path: $GF_PATHS_PROVISIONING/dashboards
+      #path: /etc/grafana/provisioning/dashboards

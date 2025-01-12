@@ -5,11 +5,13 @@ mod model;
 
 use crate::model::{batch_collect_metrics, MetricCollector};
 use chrono::{Local, NaiveTime};
+use std::future::IntoFuture;
 use std::ops::Sub;
 use std::sync::Arc;
 use tokio::signal::ctrl_c;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinError;
+use tokio::time;
 use tokio::time::{sleep, Duration};
 
 #[tokio::main]
@@ -90,28 +92,42 @@ async fn main() {
     }
 }
 
+async fn with_timeout<F>(task_name: &'static str, future: F)
+where
+    F: IntoFuture,
+{
+    let timeout_duration = Duration::from_secs(10);
+
+    match time::timeout(timeout_duration, future).await {
+        Ok(_) => {}
+        Err(_) => tracing::error!("Task {} timed out.", task_name),
+    }
+}
+
 async fn create_collect_task(
     influx_client: Arc<influxdb::Client>,
     collectors: Arc<Vec<Box<dyn MetricCollector>>>,
     interval: Duration,
     task_name: &'static str,
 ) {
+    with_timeout(task_name, async {
+        let points = batch_collect_metrics(&collectors, Local::now()).await;
+
+        for point in &points {
+            tracing::debug!("{:?}", point);
+        }
+
+        match influx_client.write(points).await {
+            Ok(_) => tracing::info!("Successfully wrote points to InfluxDB ({})", task_name),
+            Err(e) => tracing::error!(
+                "Failed to write points to InfluxDB ({}): {:?}",
+                task_name,
+                e
+            ),
+        }
+    })
+    .await;
     sleep(interval).await;
-
-    let points = batch_collect_metrics(&collectors, Local::now()).await;
-
-    for point in &points {
-        tracing::debug!("{:?}", point);
-    }
-
-    match influx_client.write(points).await {
-        Ok(_) => tracing::info!("Successfully wrote points to InfluxDB ({})", task_name),
-        Err(e) => tracing::error!(
-            "Failed to write points to InfluxDB ({}): {:?}",
-            task_name,
-            e
-        ),
-    }
 }
 
 fn handle_task_result(task_name: &str, result: Result<(), JoinError>) {

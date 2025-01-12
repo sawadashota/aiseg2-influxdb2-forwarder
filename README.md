@@ -5,7 +5,7 @@ This is a simple forwarder that reads data from AiSEG2 and writes it to InfluxDB
 ## Requirements
 
 - Environment
-    - Nix `2.18.5`
+    - Nix `2.24.11`
     - System `aarch64-darwin`
 - AiSEG2
     - Model `MKN713`

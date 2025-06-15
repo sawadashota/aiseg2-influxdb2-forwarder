@@ -89,19 +89,60 @@ pub fn load_influx_config() -> Result<InfluxConfig> {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use std::env::VarError;
+
+    /// Helper to temporarily set an environment variable and restore it after
+    fn with_env_var<F, R>(key: &str, value: &str, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let original = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        let result = f();
+        match original {
+            Some(val) => std::env::set_var(key, val),
+            None => std::env::remove_var(key),
+        }
+        result
+    }
+
+    /// Helper to temporarily clear environment variables and restore them after
+    fn without_env_vars<F, R>(keys: &[&str], f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let originals: Vec<(String, Result<String, VarError>)> = keys
+            .iter()
+            .map(|&key| (key.to_string(), std::env::var(key)))
+            .collect();
+
+        // Clear all specified variables
+        for key in keys {
+            std::env::remove_var(key);
+        }
+
+        let result = f();
+
+        // Restore original values
+        for (key, original) in originals {
+            match original {
+                Ok(val) => std::env::set_var(&key, val),
+                Err(_) => std::env::remove_var(&key),
+            }
+        }
+
+        result
+    }
 
     #[test]
     #[serial]
     fn test_load_app_config() {
-        std::env::set_var("LOG_LEVEL", "debug");
-
-        let result = load_app_config();
-
-        std::env::remove_var("LOG_LEVEL");
-
-        assert!(result.is_ok());
-        let config = result.unwrap();
-        assert_eq!(config.log_level, "debug");
+        with_env_var("LOG_LEVEL", "debug", || {
+            let result = load_app_config();
+            assert!(result.is_ok());
+            let config = result.unwrap();
+            assert_eq!(config.log_level, "debug");
+        });
     }
 
     #[test]
@@ -116,15 +157,30 @@ mod tests {
     #[test]
     #[serial]
     fn test_load_collector_config() {
+        // Save and restore original values
+        let original_total = std::env::var("COLLECTOR_TOTAL_INTERVAL_SEC").ok();
+        let original_status = std::env::var("COLLECTOR_STATUS_INTERVAL_SEC").ok();
+        let original_days = std::env::var("COLLECTOR_TOTAL_INITIAL_DAYS").ok();
+
         std::env::set_var("COLLECTOR_TOTAL_INTERVAL_SEC", "10");
         std::env::set_var("COLLECTOR_STATUS_INTERVAL_SEC", "20");
         std::env::set_var("COLLECTOR_TOTAL_INITIAL_DAYS", "30");
 
         let result = load_collector_config();
 
-        std::env::remove_var("COLLECTOR_TOTAL_INTERVAL_SEC");
-        std::env::remove_var("COLLECTOR_STATUS_INTERVAL_SEC");
-        std::env::remove_var("COLLECTOR_TOTAL_INITIAL_DAYS");
+        // Restore original values
+        match original_total {
+            Some(val) => std::env::set_var("COLLECTOR_TOTAL_INTERVAL_SEC", val),
+            None => std::env::remove_var("COLLECTOR_TOTAL_INTERVAL_SEC"),
+        }
+        match original_status {
+            Some(val) => std::env::set_var("COLLECTOR_STATUS_INTERVAL_SEC", val),
+            None => std::env::remove_var("COLLECTOR_STATUS_INTERVAL_SEC"),
+        }
+        match original_days {
+            Some(val) => std::env::set_var("COLLECTOR_TOTAL_INITIAL_DAYS", val),
+            None => std::env::remove_var("COLLECTOR_TOTAL_INITIAL_DAYS"),
+        }
 
         assert!(result.is_ok());
         let config = result.unwrap();
@@ -147,15 +203,30 @@ mod tests {
     #[test]
     #[serial]
     fn test_load_aiseg_config() {
+        // Save original values
+        let original_url = std::env::var("AISEG2_URL").ok();
+        let original_user = std::env::var("AISEG2_USER").ok();
+        let original_password = std::env::var("AISEG2_PASSWORD").ok();
+
         std::env::set_var("AISEG2_URL", "http://localhost:8080");
         std::env::set_var("AISEG2_USER", "root");
         std::env::set_var("AISEG2_PASSWORD", "password");
 
         let result = load_aiseg_config();
 
-        std::env::remove_var("AISEG2_HOST");
-        std::env::remove_var("AISEG2_USER");
-        std::env::remove_var("AISEG2_PASSWORD");
+        // Restore original values
+        match original_url {
+            Some(val) => std::env::set_var("AISEG2_URL", val),
+            None => std::env::remove_var("AISEG2_URL"),
+        }
+        match original_user {
+            Some(val) => std::env::set_var("AISEG2_USER", val),
+            None => std::env::remove_var("AISEG2_USER"),
+        }
+        match original_password {
+            Some(val) => std::env::set_var("AISEG2_PASSWORD", val),
+            None => std::env::remove_var("AISEG2_PASSWORD"),
+        }
 
         assert!(result.is_ok());
         let config = result.unwrap();
@@ -167,15 +238,24 @@ mod tests {
     #[test]
     #[serial]
     fn test_load_aiseg_config_missing() {
-        let result = load_aiseg_config();
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("Failed to load AisegConfig"));
+        // Temporarily clear AISEG2 environment variables
+        without_env_vars(&["AISEG2_URL", "AISEG2_USER", "AISEG2_PASSWORD"], || {
+            let result = load_aiseg_config();
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Failed to load AisegConfig"));
+        });
     }
 
     #[test]
     #[serial]
     fn test_load_influx_config() {
+        // Save original values
+        let original_url = std::env::var("INFLUXDB_URL").ok();
+        let original_token = std::env::var("INFLUXDB_TOKEN").ok();
+        let original_org = std::env::var("INFLUXDB_ORG").ok();
+        let original_bucket = std::env::var("INFLUXDB_BUCKET").ok();
+
         std::env::set_var("INFLUXDB_URL", "http://localhost:8086");
         std::env::set_var("INFLUXDB_TOKEN", "token");
         std::env::set_var("INFLUXDB_ORG", "org");
@@ -183,10 +263,23 @@ mod tests {
 
         let result = load_influx_config();
 
-        std::env::remove_var("INFLUXDB_HOST");
-        std::env::remove_var("INFLUXDB_TOKEN");
-        std::env::remove_var("INFLUXDB_ORG");
-        std::env::remove_var("INFLUXDB_BUCKET");
+        // Restore original values
+        match original_url {
+            Some(val) => std::env::set_var("INFLUXDB_URL", val),
+            None => std::env::remove_var("INFLUXDB_URL"),
+        }
+        match original_token {
+            Some(val) => std::env::set_var("INFLUXDB_TOKEN", val),
+            None => std::env::remove_var("INFLUXDB_TOKEN"),
+        }
+        match original_org {
+            Some(val) => std::env::set_var("INFLUXDB_ORG", val),
+            None => std::env::remove_var("INFLUXDB_ORG"),
+        }
+        match original_bucket {
+            Some(val) => std::env::set_var("INFLUXDB_BUCKET", val),
+            None => std::env::remove_var("INFLUXDB_BUCKET"),
+        }
 
         assert!(result.is_ok());
         let config = result.unwrap();
@@ -199,9 +292,20 @@ mod tests {
     #[test]
     #[serial]
     fn test_load_influx_config_missing() {
-        let result = load_influx_config();
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("Failed to load InfluxConfig"));
+        // Temporarily clear INFLUXDB environment variables
+        without_env_vars(
+            &[
+                "INFLUXDB_URL",
+                "INFLUXDB_TOKEN",
+                "INFLUXDB_ORG",
+                "INFLUXDB_BUCKET",
+            ],
+            || {
+                let result = load_influx_config();
+                assert!(result.is_err());
+                let err = result.unwrap_err();
+                assert!(err.to_string().contains("Failed to load InfluxConfig"));
+            },
+        );
     }
 }

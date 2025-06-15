@@ -243,10 +243,17 @@ async fn collect_past_total(
 ) {
     tracing::info!("Inserting last {} days...", days);
     for i in 1..=days {
-        let timestamp = Local::now()
+        let timestamp = match Local::now()
             .sub(Duration::from_secs(i * 24 * 60 * 60))
             .with_time(NaiveTime::default())
-            .unwrap();
+            .single()
+        {
+            Some(ts) => ts,
+            None => {
+                tracing::error!("Failed to set timestamp to midnight for day {} days ago", i);
+                continue;
+            }
+        };
         let points = batch_collect_metrics(&collectors, timestamp).await;
 
         for point in &points {

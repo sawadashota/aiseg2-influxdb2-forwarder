@@ -132,16 +132,17 @@ pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64> {
 ///
 /// ```no_run
 /// let date = Local::now(); // e.g., 2024-06-15 14:30:45
-/// let normalized = day_of_beginning(&date); // 2024-06-15 00:00:00
+/// let normalized = day_of_beginning(&date)?; // 2024-06-15 00:00:00
 /// ```
 ///
-/// # Safety
+/// # Errors
 ///
-/// The unwrap is safe because with_time only fails if the resulting DateTime
-/// would be out of range. Since we're setting to midnight (00:00:00) using
-/// NaiveTime::default(), this is safe for all valid input dates.
-pub fn day_of_beginning(date: &DateTime<Local>) -> DateTime<Local> {
-    date.with_time(NaiveTime::default()).unwrap()
+/// Returns an error if the resulting DateTime would be out of range, though this
+/// is extremely unlikely when setting to midnight (00:00:00) using NaiveTime::default().
+pub fn day_of_beginning(date: &DateTime<Local>) -> Result<DateTime<Local>> {
+    date.with_time(NaiveTime::default())
+        .single()
+        .ok_or_else(|| anyhow!("Failed to set time to midnight"))
 }
 
 /// Truncates a floating-point number to an integer.
@@ -308,7 +309,7 @@ mod tests {
         #[test]
         fn test_day_of_beginning() {
             let date = Local.with_ymd_and_hms(2023, 12, 25, 15, 30, 45).unwrap();
-            let result = day_of_beginning(&date);
+            let result = day_of_beginning(&date).unwrap();
 
             assert_eq!(result.year(), 2023);
             assert_eq!(result.month(), 12);
@@ -321,7 +322,7 @@ mod tests {
         #[test]
         fn test_day_of_beginning_already_midnight() {
             let date = Local.with_ymd_and_hms(2023, 12, 25, 0, 0, 0).unwrap();
-            let result = day_of_beginning(&date);
+            let result = day_of_beginning(&date).unwrap();
 
             assert_eq!(result, date);
         }

@@ -1,5 +1,5 @@
 //! HTTP client for communicating with the AiSEG2 system.
-//! 
+//!
 //! This module provides a client that handles HTTP requests to the AiSEG2
 //! web interface using digest authentication. The AiSEG2 system requires
 //! digest auth for all API endpoints.
@@ -10,13 +10,13 @@ use diqwest::WithDigestAuth;
 use reqwest::Client as HttpClient;
 
 /// HTTP client for AiSEG2 API communication.
-/// 
+///
 /// This client wraps the reqwest HTTP client and adds digest authentication
 /// support required by the AiSEG2 system. It handles all HTTP communication
 /// with the AiSEG2 device, including authentication and error handling.
-/// 
+///
 /// # Authentication
-/// 
+///
 /// The AiSEG2 system uses HTTP digest authentication. This client automatically
 /// handles the authentication challenge-response flow using the configured
 /// username and password.
@@ -29,22 +29,22 @@ pub struct Client {
 
 impl Client {
     /// Creates a new AiSEG2 HTTP client.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `config` - Configuration containing the AiSEG2 base URL, username, and password
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```no_run
     /// use crate::config::Aiseg2Config;
-    /// 
+    ///
     /// let config = Aiseg2Config {
     ///     url: "http://192.168.1.100".to_string(),
     ///     user: "admin".to_string(),
     ///     password: "password".to_string(),
     /// };
-    /// 
+    ///
     /// let client = Client::new(config);
     /// ```
     pub fn new(config: config::Aiseg2Config) -> Self {
@@ -56,36 +56,36 @@ impl Client {
     }
 
     /// Performs an HTTP GET request to the AiSEG2 system.
-    /// 
+    ///
     /// This method constructs the full URL by combining the base URL from
     /// configuration with the provided path, then sends a GET request with
     /// digest authentication.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `path` - The API endpoint path (e.g., "/page/electricflow/111")
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Ok(String)` - The response body as a string on successful requests (2xx status)
     /// * `Err(anyhow::Error)` - An error containing status code and response body for failed requests
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This method can fail in several ways:
     /// - Network connectivity issues
     /// - Authentication failures (401 Unauthorized)
     /// - Server errors (5xx status codes)
     /// - Invalid paths (404 Not Found)
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```no_run
     /// # async fn example() -> anyhow::Result<()> {
     /// # let client = Client::new(config);
     /// // Fetch current power flow data
     /// let html = client.get("/page/electricflow/111").await?;
-    /// 
+    ///
     /// // Fetch daily total graph
     /// let graph_data = client.get("/page/graph/51111?data=...").await?;
     /// # Ok(())

@@ -78,7 +78,7 @@ impl MetricCollector for ClimateMetricCollector {
     fn collect<'a>(
         &'a self,
         timestamp: DateTime<Local>,
-    ) -> Pin<Box<dyn Future<Output=Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
         Box::pin(async move {
             let mut list: Vec<ClimateStatusMetric> = vec![];
 
@@ -201,35 +201,30 @@ fn parse(
 /// Given elements with classes ["num no2", "num no3", "num no5"], returns 23.5
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
     const EXPECTED_DIGITS: usize = 3;
-    
+
     // Initialize with default values for XX.X format
     let mut digits = vec!['0', '0', '0']; // [tens, ones, tenths]
     let mut processed_count = 0;
-    
+
     // Process up to 3 elements
     for element in elements.take(EXPECTED_DIGITS) {
         // Extract class attribute
         let class_value = element.attr("class").context("Failed to get class")?;
-        
+
         // Extract the first numeric character from the class
         let digit = class_value
             .chars()
             .filter(|c| c.is_numeric())
             .next()
             .context("No numeric character found in class")?;
-        
+
         digits[processed_count] = digit;
         processed_count += 1;
     }
-    
+
     // Build the decimal number string: "XX.X"
-    let number_str = format!(
-        "{}{}.{}",
-        digits[0],
-        digits[1],
-        digits[2]
-    );
-    
+    let number_str = format!("{}{}.{}", digits[0], digits[1], digits[2]);
+
     // Parse to f64
     number_str
         .parse::<f64>()
@@ -281,12 +276,18 @@ mod tests {
                 </div>"#,
                 base_id,
                 name,
-                base_id, temp_digit1,
-                base_id, temp_digit2,
-                base_id, temp_digit3,
-                base_id, hum_digit1,
-                base_id, hum_digit2,
-                base_id, hum_digit3
+                base_id,
+                temp_digit1,
+                base_id,
+                temp_digit2,
+                base_id,
+                temp_digit3,
+                base_id,
+                hum_digit1,
+                base_id,
+                hum_digit2,
+                base_id,
+                hum_digit3
             ));
         }
 
@@ -425,14 +426,14 @@ mod tests {
         fn test_extract_num_from_html_class_various_values() {
             // The function expects exactly 3 elements:
             // Element 0 -> position 0 (tens digit)
-            // Element 1 -> position 1 (ones digit)  
+            // Element 1 -> position 1 (ones digit)
             // Element 2 -> position 3 (decimal digit) - skips position 2 which has '.'
             let test_cases = vec![
-                (vec!["0", "0", "0"], 0.0),   // "00.0"
-                (vec!["2", "5", "5"], 25.5),  // "25.5"
-                (vec!["9", "9", "9"], 99.9),  // "99.9"
-                (vec!["0", "1", "2"], 1.2),   // "01.2"
-                (vec!["5", "0", "0"], 50.0),  // "50.0"
+                (vec!["0", "0", "0"], 0.0),  // "00.0"
+                (vec!["2", "5", "5"], 25.5), // "25.5"
+                (vec!["9", "9", "9"], 99.9), // "99.9"
+                (vec!["0", "1", "2"], 1.2),  // "01.2"
+                (vec!["5", "0", "0"], 50.0), // "50.0"
             ];
 
             for (digits, expected) in test_cases {
@@ -628,7 +629,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 23.4);  // Formats as "23.4"
+            assert_eq!(result.unwrap(), 23.4); // Formats as "23.4"
         }
 
         #[test]
@@ -649,7 +650,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 0.0);  // Formats as "00.0"
+            assert_eq!(result.unwrap(), 0.0); // Formats as "00.0"
         }
 
         #[test]
@@ -670,7 +671,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 98.7);  // Formats as "98.7"
+            assert_eq!(result.unwrap(), 98.7); // Formats as "98.7"
         }
 
         #[test]
@@ -691,7 +692,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.3"
+            assert_eq!(result.unwrap(), 12.3); // Formats as "12.3"
         }
 
         #[test]
@@ -736,7 +737,7 @@ mod tests {
 
             // With only 2 elements, the function will process what it can
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 12.0);  // Formats as "12.0"
+            assert_eq!(result.unwrap(), 12.0); // Formats as "12.0"
         }
 
         #[test]
@@ -760,7 +761,7 @@ mod tests {
 
             // The function processes exactly 3 elements and ignores the rest
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.3"
+            assert_eq!(result.unwrap(), 12.3); // Formats as "12.3"
         }
 
         #[test]

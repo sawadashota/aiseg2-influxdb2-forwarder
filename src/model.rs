@@ -8,13 +8,13 @@ use std::future::Future;
 use std::pin::Pin;
 
 /// Trait for types that can be converted to InfluxDB data points.
-/// 
+///
 /// This trait enables metric types to be transformed into InfluxDB-compatible
 /// data points for storage. Implementors must be thread-safe (Send + Sync)
 /// to support concurrent metric collection.
 pub trait DataPointBuilder: Send + Sync {
     /// Converts the metric into an InfluxDB DataPoint.
-    /// 
+    ///
     /// # Returns
     /// - `Ok(DataPoint)` if conversion succeeds
     /// - `Err` if the metric data cannot be converted to a valid DataPoint
@@ -22,7 +22,7 @@ pub trait DataPointBuilder: Send + Sync {
 }
 
 /// Represents the type of measurement being collected.
-/// 
+///
 /// Each measurement type corresponds to a different InfluxDB measurement
 /// (table) where the data will be stored.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -49,7 +49,7 @@ impl fmt::Display for Measurement {
 }
 
 /// Represents a real-time power status metric.
-/// 
+///
 /// Used for summary-level power metrics like total generation,
 /// total consumption, and net power flow (buying/selling).
 #[derive(Debug)]
@@ -76,7 +76,7 @@ impl DataPointBuilder for PowerStatusMetric {
 }
 
 /// Represents a detailed breakdown of power metrics.
-/// 
+///
 /// Used for component-level power metrics that show individual
 /// sources of generation or consumption (e.g., solar panels,
 /// specific appliances).
@@ -93,7 +93,7 @@ pub struct PowerStatusBreakdownMetric {
 }
 
 /// Categories for power breakdown metrics.
-/// 
+///
 /// Distinguishes between power generation sources and
 /// power consumption endpoints.
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -105,14 +105,14 @@ pub(crate) enum PowerStatusBreakdownMetricCategory {
 }
 
 /// Merges power breakdown metrics with identical keys.
-/// 
+///
 /// When multiple metrics have the same measurement, category, and name,
 /// this function sums their values. This is useful when the same device
 /// appears multiple times in paginated results.
-/// 
+///
 /// # Arguments
 /// * `metrics` - Vector of power breakdown metrics to merge
-/// 
+///
 /// # Returns
 /// A vector with merged metrics where duplicates have been summed
 pub fn merge_same_name_power_status_breakdown_metrics(
@@ -169,7 +169,7 @@ impl DataPointBuilder for PowerStatusBreakdownMetric {
 }
 
 /// Represents daily or periodic total metrics.
-/// 
+///
 /// Used for aggregated metrics over a time period, such as
 /// daily energy consumption, daily energy generation, or
 /// daily resource usage (water, gas).
@@ -204,7 +204,7 @@ impl DataPointBuilder for PowerTotalMetric {
 }
 
 /// Represents environmental climate metrics.
-/// 
+///
 /// Used for room-specific temperature and humidity readings
 /// from AiSEG2's climate monitoring sensors.
 #[derive(Debug)]
@@ -222,7 +222,7 @@ pub struct ClimateStatusMetric {
 }
 
 /// Categories for climate metrics.
-/// 
+///
 /// Distinguishes between different types of environmental
 /// measurements from climate sensors.
 #[derive(Debug)]
@@ -262,38 +262,38 @@ impl DataPointBuilder for ClimateStatusMetric {
 }
 
 /// Type alias for the future returned by metric collectors.
-/// 
+///
 /// This boxed future allows collectors to perform asynchronous operations
 /// (like HTTP requests) while maintaining a consistent interface.
 pub type CollectFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>;
 
 /// Trait for types that can collect metrics from AiSEG2.
-/// 
+///
 /// Implementors of this trait are responsible for fetching specific
 /// types of metrics from the AiSEG2 system. Each collector typically
 /// handles one category of metrics (power, climate, totals, etc.).
 pub trait MetricCollector: Send + Sync {
     /// Collects metrics at the specified timestamp.
-    /// 
+    ///
     /// # Arguments
     /// * `timestamp` - The time to associate with collected metrics
-    /// 
+    ///
     /// # Returns
     /// A future that resolves to a vector of DataPointBuilder instances
     fn collect(&self, timestamp: DateTime<Local>) -> CollectFuture<'_>;
 }
 
 /// Collects metrics from multiple collectors concurrently.
-/// 
+///
 /// This function runs all collectors in parallel, handles errors gracefully,
 /// and converts successful results to InfluxDB data points. Failed collections
 /// or conversions are logged but don't stop other collectors.
-/// 
+///
 /// # Arguments
 /// * `clients` - Vector of metric collectors to run
 /// * `timestamp` - The timestamp to use for all collected metrics
-/// 
+///
 /// # Returns
 /// A vector of successfully collected and converted data points
 pub async fn batch_collect_metrics<'a>(
@@ -323,7 +323,7 @@ pub async fn batch_collect_metrics<'a>(
 }
 
 /// Units of measurement used in the system.
-/// 
+///
 /// These units are appended to metric names to provide
 /// clear context about what is being measured.
 pub enum Unit {

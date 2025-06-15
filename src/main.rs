@@ -1,16 +1,16 @@
 //! AiSEG2 to InfluxDB2 Forwarder
-//! 
+//!
 //! This application collects energy monitoring metrics from Panasonic AiSEG2 systems
 //! and forwards them to InfluxDB2 for storage and visualization.
-//! 
+//!
 //! # Architecture
-//! 
+//!
 //! The application runs two parallel collection loops:
 //! - **Status collectors** (5-second interval): Real-time power and climate metrics
 //! - **Total collectors** (60-second interval): Daily aggregated consumption metrics
-//! 
+//!
 //! # Features
-//! 
+//!
 //! - Automatic retry on task failure
 //! - Graceful shutdown on SIGTERM/SIGINT
 //! - Historical data backfill on startup
@@ -34,7 +34,7 @@ use tokio::time;
 use tokio::time::{sleep, Duration};
 
 /// Application entry point.
-/// 
+///
 /// Initializes configuration, sets up collectors, and manages the main event loop
 /// with signal handling for graceful shutdown.
 #[tokio::main]
@@ -60,7 +60,7 @@ async fn main() {
             &aiseg_client,
         ))),
     ]);
-    
+
     // Initialize collectors for real-time status (5-second interval)
     let status_collectors: Arc<Vec<Box<dyn MetricCollector>>> = Arc::new(vec![
         Box::new(aiseg::PowerMetricCollector::new(Arc::clone(&aiseg_client))),
@@ -127,14 +127,14 @@ async fn main() {
 }
 
 /// Wraps a future with a timeout to prevent tasks from hanging indefinitely.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `task_name` - Name of the task for logging purposes
 /// * `future` - The future to execute with timeout protection
-/// 
+///
 /// # Behavior
-/// 
+///
 /// - Timeout is hardcoded to 10 seconds (configurable via COLLECTOR_TASK_TIMEOUT_SECONDS)
 /// - Logs an error if the task times out but doesn't propagate the error
 /// - Used to prevent collector tasks from blocking the main loop
@@ -151,21 +151,21 @@ where
 }
 
 /// Creates and executes a single metric collection cycle.
-/// 
+///
 /// This function:
 /// 1. Collects metrics from all provided collectors
 /// 2. Writes the metrics to InfluxDB
 /// 3. Sleeps for the specified interval
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `influx_client` - Shared InfluxDB client for writing metrics
 /// * `collectors` - List of metric collectors to execute
 /// * `interval` - Duration to sleep after collection completes
 /// * `task_name` - Name of the task for logging purposes
-/// 
+///
 /// # Error Handling
-/// 
+///
 /// - Collection errors from individual collectors are logged but don't stop other collectors
 /// - InfluxDB write errors are logged but don't crash the task
 /// - The entire operation is wrapped in a timeout to prevent hanging
@@ -196,14 +196,14 @@ async fn create_collect_task(
 }
 
 /// Handles the result of a tokio task, logging success or failure.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `task_name` - Name of the task for logging
 /// * `result` - The JoinHandle result from the completed task
-/// 
+///
 /// # Behavior
-/// 
+///
 /// - Success is logged at debug level
 /// - Failures (panics, cancellation) are logged at error level
 /// - Used in the main loop to detect and log task crashes before restarting
@@ -219,19 +219,19 @@ fn handle_task_result(task_name: &str, result: Result<(), JoinError>) {
 }
 
 /// Collects and stores historical daily total metrics.
-/// 
+///
 /// This function runs once at startup to backfill historical data for the
 /// specified number of days. It's useful for populating graphs when the
 /// forwarder is first deployed or after downtime.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `collectors` - Total metric collectors (daily aggregates)
 /// * `influx_client` - InfluxDB client for writing historical data
 /// * `days` - Number of past days to collect (1 = yesterday only)
-/// 
+///
 /// # Behavior
-/// 
+///
 /// - Iterates from `days` ago to yesterday (excludes today)
 /// - Each day's timestamp is normalized to midnight
 /// - Continues even if individual days fail

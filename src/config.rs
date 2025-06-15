@@ -3,14 +3,14 @@ use serde_derive::Deserialize;
 use std::str::FromStr;
 
 /// Provides the default log level when not specified in environment.
-/// 
+///
 /// Returns "info" as the default logging level.
 fn default_log_level() -> String {
     "info".to_string()
 }
 
 /// Application-wide configuration settings.
-/// 
+///
 /// Controls general application behavior such as logging level.
 /// Loaded from environment variables without prefix.
 #[derive(Deserialize, Debug)]
@@ -23,7 +23,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     /// Converts the string log level to a tracing::Level enum.
-    /// 
+    ///
     /// Falls back to INFO level if the string cannot be parsed.
     pub fn log_level(&self) -> tracing::Level {
         tracing::Level::from_str(self.log_level.as_str()).unwrap_or(tracing::Level::INFO)
@@ -31,10 +31,10 @@ impl AppConfig {
 }
 
 /// Loads application configuration from environment variables.
-/// 
+///
 /// Reads environment variables:
 /// - `LOG_LEVEL`: Sets the logging level (default: "info")
-/// 
+///
 /// # Returns
 /// - `Ok(AppConfig)` if configuration loads successfully
 /// - `Err` if required environment variables are missing or invalid
@@ -61,7 +61,7 @@ fn default_total_initial_days() -> u64 {
 }
 
 /// Configuration for metric collection intervals and behavior.
-/// 
+///
 /// Controls how frequently different types of metrics are collected
 /// from the AiSEG2 system. Loaded from environment variables with
 /// COLLECTOR_ prefix.
@@ -71,12 +71,12 @@ pub struct CollectorConfig {
     /// Default: 5 seconds
     #[serde(default = "default_status_interval_sec")]
     pub status_interval_sec: u64,
-    
+
     /// Interval for collecting daily total metrics
     /// Default: 60 seconds
     #[serde(default = "default_total_interval_sec")]
     pub total_interval_sec: u64,
-    
+
     /// Number of past days to collect when starting up
     /// Used to backfill historical data on first run
     /// Default: 30 days
@@ -85,12 +85,12 @@ pub struct CollectorConfig {
 }
 
 /// Loads collector configuration from environment variables.
-/// 
+///
 /// Reads environment variables with COLLECTOR_ prefix:
 /// - `COLLECTOR_STATUS_INTERVAL_SEC`: Interval for status metrics (default: 5)
 /// - `COLLECTOR_TOTAL_INTERVAL_SEC`: Interval for total metrics (default: 60)
 /// - `COLLECTOR_TOTAL_INITIAL_DAYS`: Days of history to collect (default: 30)
-/// 
+///
 /// # Returns
 /// - `Ok(CollectorConfig)` with loaded or default values
 /// - `Err` if environment variables contain invalid values
@@ -102,7 +102,7 @@ pub fn load_collector_config() -> Result<CollectorConfig> {
 }
 
 /// Configuration for connecting to the AiSEG2 system.
-/// 
+///
 /// Contains credentials and connection details for the
 /// Panasonic AiSEG2 energy monitoring system.
 /// Loaded from environment variables with AISEG2_ prefix.
@@ -117,12 +117,12 @@ pub struct Aiseg2Config {
 }
 
 /// Loads AiSEG2 configuration from environment variables.
-/// 
+///
 /// Reads required environment variables with AISEG2_ prefix:
 /// - `AISEG2_URL`: The base URL of the AiSEG2 system
 /// - `AISEG2_USER`: Username for authentication
 /// - `AISEG2_PASSWORD`: Password for authentication
-/// 
+///
 /// # Returns
 /// - `Ok(Aiseg2Config)` if all required variables are present
 /// - `Err` if any required variables are missing
@@ -134,7 +134,7 @@ pub(crate) fn load_aiseg_config() -> Result<Aiseg2Config> {
 }
 
 /// Configuration for connecting to InfluxDB 2.x.
-/// 
+///
 /// Contains all necessary parameters for establishing
 /// a connection to InfluxDB and writing metrics.
 /// Loaded from environment variables with INFLUXDB_ prefix.
@@ -151,13 +151,13 @@ pub struct InfluxConfig {
 }
 
 /// Loads InfluxDB configuration from environment variables.
-/// 
+///
 /// Reads required environment variables with INFLUXDB_ prefix:
 /// - `INFLUXDB_URL`: The InfluxDB server URL
 /// - `INFLUXDB_TOKEN`: Authentication token
 /// - `INFLUXDB_ORG`: Organization name
 /// - `INFLUXDB_BUCKET`: Target bucket name
-/// 
+///
 /// # Returns
 /// - `Ok(InfluxConfig)` if all required variables are present
 /// - `Err` if any required variables are missing

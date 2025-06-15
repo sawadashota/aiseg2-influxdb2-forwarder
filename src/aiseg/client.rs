@@ -55,6 +55,12 @@ impl Client {
         }
     }
 
+    /// Returns the base URL of the AiSEG2 system.
+    #[cfg(test)]
+    pub fn base_url(&self) -> &str {
+        &self.config.url
+    }
+
     /// Performs an HTTP GET request to the AiSEG2 system.
     ///
     /// This method constructs the full URL by combining the base URL from

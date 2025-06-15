@@ -1,13 +1,68 @@
+//! InfluxDB2 client wrapper for writing time-series metrics.
+//!
+//! This module provides a simplified interface to the InfluxDB2 client, handling
+//! connection management and data point writing operations. It wraps the official
+//! influxdb2 Rust client to provide a focused API for the forwarder's needs.
+//!
+//! # Architecture
+//! The client maintains a persistent connection to InfluxDB2 and streams data points
+//! in batches for efficient network utilization. All write operations are asynchronous
+//! to prevent blocking the metric collection tasks.
+//!
+//! # Error Handling
+//! Network errors, authentication failures, and InfluxDB server errors are propagated
+//! as anyhow::Result errors, allowing the caller to implement retry logic or failover
+//! strategies as needed.
+
 use crate::config::InfluxConfig;
 use anyhow::Result;
 use futures::prelude::stream;
 
+/// InfluxDB2 client wrapper for writing metrics data.
+///
+/// This client encapsulates the InfluxDB2 connection and provides a simple interface
+/// for writing data points. It maintains the target bucket configuration and handles
+/// the streaming of data points to the InfluxDB2 write API.
+///
+/// # Example
+/// ```rust
+/// let config = InfluxConfig {
+///     url: "http://localhost:8086".to_string(),
+///     org: "my-org".to_string(),
+///     token: "my-token".to_string(),
+///     bucket: "metrics".to_string(),
+/// };
+/// let client = Client::new(config);
+/// let points = vec![/* data points */];
+/// client.write(points).await?;
+/// ```
 pub struct Client {
+    /// The underlying InfluxDB2 client instance
     client: influxdb2::Client,
+    /// The target bucket for all write operations
     bucket: String,
 }
 
 impl Client {
+    /// Creates a new InfluxDB client instance.
+    ///
+    /// Initializes the client with the provided configuration, establishing the connection
+    /// parameters for the InfluxDB2 instance. The actual network connection is established
+    /// lazily on the first write operation.
+    ///
+    /// # Arguments
+    /// * `config` - InfluxDB connection configuration containing:
+    ///   - `url`: The InfluxDB2 server URL (e.g., "http://localhost:8086")
+    ///   - `org`: The organization name for authentication
+    ///   - `token`: The API token for authentication
+    ///   - `bucket`: The target bucket for write operations
+    ///
+    /// # Returns
+    /// A new Client instance configured with the provided settings
+    ///
+    /// # Connection Behavior
+    /// The client uses lazy connection establishment - no network activity occurs
+    /// during construction. The first write operation will establish the connection.
     pub(crate) fn new(config: InfluxConfig) -> Self {
         let client = influxdb2::Client::new(config.url, config.org, config.token);
         Self {
@@ -16,6 +71,39 @@ impl Client {
         }
     }
 
+    /// Writes a batch of data points to InfluxDB.
+    ///
+    /// Streams the provided data points to the configured bucket using the InfluxDB2
+    /// line protocol. The operation is atomic - either all points are written successfully
+    /// or none are written.
+    ///
+    /// # Arguments
+    /// * `points` - Vector of DataPoint instances to write. Can be empty.
+    ///
+    /// # Returns
+    /// * `Ok(())` - All points were written successfully
+    /// * `Err(e)` - Write operation failed due to:
+    ///   - Network connectivity issues
+    ///   - Authentication/authorization failures (401/403)
+    ///   - Invalid data point format (400)
+    ///   - Server errors (500)
+    ///   - Rate limiting (429)
+    ///
+    /// # Performance
+    /// The client streams points efficiently using the line protocol, batching them
+    /// for optimal network utilization. Large batches are automatically handled by
+    /// the underlying client.
+    ///
+    /// # Example
+    /// ```rust
+    /// let points = vec![
+    ///     DataPoint::builder("temperature")
+    ///         .tag("location", "room1")
+    ///         .field("value", 23.5)
+    ///         .build()?,
+    /// ];
+    /// client.write(points).await?;
+    /// ```
     pub async fn write(&self, points: Vec<influxdb2::models::DataPoint>) -> Result<()> {
         Ok(self
             .client

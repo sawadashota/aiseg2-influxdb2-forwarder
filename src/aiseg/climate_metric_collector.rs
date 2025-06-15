@@ -37,7 +37,7 @@ impl MetricCollector for ClimateMetricCollector {
                 let document = Html::parse_document(&response);
 
                 for i in 1..=3 {
-                    let base_id = format!("#base{:02}_1", i);
+                    let base_id = format!("#base{}_1", i);
                     let metrics = match parse(&document, &base_id, timestamp) {
                         Ok(metrics) => metrics,
                         Err(_) => break 'root,
@@ -111,15 +111,9 @@ fn parse(
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
     let mut chars: [char; 4] = ['0', '0', '.', '0'];
     let mut i = 0;
-    let mut element_count = 0;
-
     for element in elements {
-        element_count += 1;
         if i == 2 {
             i += 1; // skip dot
-        }
-        if i >= 4 {
-            break; // We have all 4 digits
         }
         let class_value = element.attr("class").context("Failed to get class")?;
         chars[i] = class_value
@@ -129,15 +123,10 @@ fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result
             .parse::<char>()
             .context("Failed to parse value")?;
         i += 1;
+        if i >= 4 {
+            break; // Stop after processing 3 elements
+        }
     }
-
-    if element_count != 4 {
-        return Err(anyhow::anyhow!(
-            "Expected 4 elements but found {}",
-            element_count
-        ));
-    }
-
     Ok(chars.iter().collect::<String>().parse::<f64>()?)
 }
 
@@ -150,18 +139,18 @@ mod tests {
         let mut html = r#"<!DOCTYPE html><html><body>"#.to_string();
 
         for (i, (name, temp, humidity)) in items.iter().enumerate() {
-            let base_id = format!("{:02}", i + 1); // Format as "01", "02", etc.
-            
+            let base_id = format!("{}", i + 1);
+
             // Extract temperature digits (format: XX.X)
             let temp_digit1 = temp.chars().next().unwrap_or('0');
             let temp_digit2 = temp.chars().nth(1).unwrap_or('0');
             let temp_digit3 = temp.chars().nth(3).unwrap_or('0'); // Skip decimal point at position 2
-            
+
             // Extract humidity digits (format: XX.X)
             let hum_digit1 = humidity.chars().next().unwrap_or('0');
             let hum_digit2 = humidity.chars().nth(1).unwrap_or('0');
             let hum_digit3 = humidity.chars().nth(3).unwrap_or('0'); // Skip decimal point at position 2
-            
+
             html.push_str(&format!(
                 r#"<div id="base{}_1">
                     <div class="txt_name">{}</div>
@@ -172,7 +161,6 @@ mod tests {
                             <div id="num_ond_{}_2" class="num no{}"></div>
                             <div id="num_dot_place1" class="num_dot"></div>
                             <div id="num_ond_{}_3" class="num no{}"></div>
-                            <div id="num_ond_{}_4" class="num no0" style="display:none"></div>
                             <div class="num_tani"></div>
                         </div>
                         <div class="num_shitudo" style="visibility:visible">
@@ -181,7 +169,6 @@ mod tests {
                             <div id="num_shitudo_{}_2" class="num no{}"></div>
                             <div id="num_dot_place2" class="num_dot"></div>
                             <div id="num_shitudo_{}_3" class="num no{}"></div>
-                            <div id="num_shitudo_{}_4" class="num no0" style="display:none"></div>
                             <div class="num_tani"></div>
                         </div>
                     </div>
@@ -191,11 +178,9 @@ mod tests {
                 base_id, temp_digit1,
                 base_id, temp_digit2,
                 base_id, temp_digit3,
-                base_id, // for _4 temperature element
                 base_id, hum_digit1,
                 base_id, hum_digit2,
-                base_id, hum_digit3,
-                base_id, // for _4 humidity element
+                base_id, hum_digit3
             ));
         }
 
@@ -212,7 +197,7 @@ mod tests {
             let document = Html::parse_document(&html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base01_1", timestamp);
+            let result = parse(&document, "#base1_1", timestamp);
 
             assert!(result.is_ok());
             let metrics = result.unwrap();
@@ -332,17 +317,16 @@ mod tests {
 
         #[test]
         fn test_extract_num_from_html_class_various_values() {
-            // The function expects 4 elements but only uses the first 3:
+            // The function expects exactly 3 elements:
             // Element 0 -> position 0 (tens digit)
             // Element 1 -> position 1 (ones digit)  
             // Element 2 -> position 3 (decimal digit) - skips position 2 which has '.'
-            // Element 3 -> not used but required for validation
             let test_cases = vec![
-                (vec!["0", "0", "0", "0"], 0.0),   // "00.0"
-                (vec!["2", "5", "5", "0"], 25.5),  // "25.5"
-                (vec!["9", "9", "9", "0"], 99.9),  // "99.9"
-                (vec!["0", "1", "2", "0"], 1.2),   // "01.2"
-                (vec!["5", "0", "0", "0"], 50.0),  // "50.0"
+                (vec!["0", "0", "0"], 0.0),   // "00.0"
+                (vec!["2", "5", "5"], 25.5),  // "25.5"
+                (vec!["9", "9", "9"], 99.9),  // "99.9"
+                (vec!["0", "1", "2"], 1.2),   // "01.2"
+                (vec!["5", "0", "0"], 50.0),  // "50.0"
             ];
 
             for (digits, expected) in test_cases {
@@ -351,9 +335,8 @@ mod tests {
                         <span class="num{}"></span>
                         <span class="num{}"></span>
                         <span class="num{}"></span>
-                        <span class="num{}"></span>
                     </div>"#,
-                    digits[0], digits[1], digits[2], digits[3]
+                    digits[0], digits[1], digits[2]
                 );
                 let document = scraper::Html::parse_document(&html);
                 let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
@@ -415,7 +398,7 @@ mod tests {
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base01_1", timestamp);
+            let result = parse(&document, "#base1_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())
@@ -429,7 +412,7 @@ mod tests {
         #[test]
         fn test_parse_missing_name_element() {
             let html = r#"
-                <div id="base01_1">
+                <div id="base1_1">
                     <div class="num_wrapper">
                         <div id="num_ond_1" class="num2"></div>
                     </div>
@@ -438,7 +421,7 @@ mod tests {
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base01_1", timestamp);
+            let result = parse(&document, "#base1_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())
@@ -452,14 +435,14 @@ mod tests {
         #[test]
         fn test_parse_missing_num_wrapper() {
             let html = r#"
-                <div id="base01_1">
+                <div id="base1_1">
                     <div class="txt_name">Room</div>
                 </div>
             "#;
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base01_1", timestamp);
+            let result = parse(&document, "#base1_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())
@@ -476,21 +459,23 @@ mod tests {
                 <div id="base1_1">
                     <div class="txt_name">Room</div>
                     <div class="num_wrapper">
-                        <div id="num_shitudo_1" class="num5"></div>
-                        <div id="num_shitudo_1" class="num0"></div>
-                        <div id="num_shitudo_1" class="num0"></div>
-                        <div id="num_shitudo_1" class="num0"></div>
+                        <div id="num_shitudo_1_1" class="num no5"></div>
+                        <div id="num_shitudo_1_2" class="num no0"></div>
+                        <div id="num_shitudo_1_3" class="num no0"></div>
                     </div>
                 </div>
             "#;
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base01_1", timestamp);
+            let result = parse(&document, "#base1_1", timestamp);
 
-            if let Ok(metrics) = &result {
-                panic!("Expected error but got {} metrics", metrics.len())
-            }
+            // With missing temperature elements, it uses default 0.0
+            assert!(result.is_ok());
+            let metrics = result.unwrap();
+            assert_eq!(metrics.len(), 2);
+            assert_eq!(metrics[0].value, 0.0); // temperature defaults to 0.0
+            assert_eq!(metrics[1].value, 50.0); // humidity is 50.0
         }
 
         #[test]
@@ -499,32 +484,33 @@ mod tests {
                 <div id="base1_1">
                     <div class="txt_name">Room</div>
                     <div class="num_wrapper">
-                        <div id="num_ond_1" class="num2"></div>
-                        <div id="num_ond_1" class="num5"></div>
-                        <div id="num_ond_1" class="num0"></div>
-                        <div id="num_ond_1" class="num0"></div>
+                        <div id="num_ond_1_1" class="num no2"></div>
+                        <div id="num_ond_1_2" class="num no5"></div>
+                        <div id="num_ond_1_3" class="num no0"></div>
                     </div>
                 </div>
             "#;
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base01_1", timestamp);
+            let result = parse(&document, "#base1_1", timestamp);
 
-            if let Ok(metrics) = &result {
-                panic!("Expected error but got {} metrics", metrics.len())
-            }
+            // With missing humidity elements, it uses default 0.0
+            assert!(result.is_ok());
+            let metrics = result.unwrap();
+            assert_eq!(metrics.len(), 2);
+            assert_eq!(metrics[0].value, 25.0); // temperature is 25.0
+            assert_eq!(metrics[1].value, 0.0); // humidity defaults to 0.0
         }
 
         #[test]
         fn test_extract_num_from_html_class_valid_input() {
-            // Function expects 4 elements but only uses first 3: [0]='2', [1]='3', skip, [3]='4'
+            // Function now expects exactly 3 elements: [0]='2', [1]='3', skip position 2, [2]='4'
             let html = r#"
                 <div id="wrapper">
                     <span class="num2"></span>
                     <span class="num3"></span>
                     <span class="num4"></span>
-                    <span class="num0"></span>
                 </div>
             "#;
             let document = scraper::Html::parse_document(html);
@@ -543,7 +529,6 @@ mod tests {
         fn test_extract_num_from_html_class_zero_values() {
             let html = r#"
                 <div id="wrapper">
-                    <span class="num0"></span>
                     <span class="num0"></span>
                     <span class="num0"></span>
                     <span class="num0"></span>
@@ -568,7 +553,6 @@ mod tests {
                     <span class="num9"></span>
                     <span class="num8"></span>
                     <span class="num7"></span>
-                    <span class="num0"></span>
                 </div>
             "#;
             let document = scraper::Html::parse_document(html);
@@ -590,7 +574,6 @@ mod tests {
                     <span class="prefix_num1_suffix"></span>
                     <span class="text_num2_more"></span>
                     <span class="num3_end"></span>
-                    <span class="start_num0"></span>
                 </div>
             "#;
             let document = scraper::Html::parse_document(html);
@@ -612,7 +595,6 @@ mod tests {
                     <span class="invalid"></span>
                     <span class="num2"></span>
                     <span class="num3"></span>
-                    <span class="num4"></span>
                 </div>
             "#;
             let document = scraper::Html::parse_document(html);
@@ -636,7 +618,6 @@ mod tests {
                 <div id="wrapper">
                     <span class="num1"></span>
                     <span class="num2"></span>
-                    <span class="num3"></span>
                 </div>
             "#;
             let document = scraper::Html::parse_document(html);
@@ -647,11 +628,9 @@ mod tests {
 
             let result = extract_num_from_html_class(elements);
 
-            assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("Expected 4 elements but found 3"));
+            // With only 2 elements, the function will process what it can
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 12.0);  // Formats as "12.0"
         }
 
         #[test]
@@ -673,7 +652,7 @@ mod tests {
 
             let result = extract_num_from_html_class(elements);
 
-            // The function should only process the first 4 elements (but only uses first 3)
+            // The function processes exactly 3 elements and ignores the rest
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), 12.3);  // Formats as "12.3"
         }
@@ -685,7 +664,6 @@ mod tests {
                     <span></span>
                     <span class="num2"></span>
                     <span class="num3"></span>
-                    <span class="num4"></span>
                 </div>
             "#;
             let document = scraper::Html::parse_document(html);

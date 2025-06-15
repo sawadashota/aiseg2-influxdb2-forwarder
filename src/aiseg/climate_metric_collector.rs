@@ -11,17 +11,70 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// Collector for climate metrics (temperature and humidity) from AiSEG2 air environment monitoring pages.
+///
+/// This collector scrapes temperature and humidity data from multiple rooms/locations
+/// connected to the AiSEG2 system. It iterates through multiple pages (up to 20) to
+/// gather all available climate data, with each page potentially containing up to 3
+/// monitored locations.
+///
+/// # Data Collection
+/// - **Temperature**: Measured in degrees Celsius with one decimal place precision (XX.X°C)
+/// - **Humidity**: Measured as percentage with one decimal place precision (XX.X%)
+///
+/// # Page Structure
+/// The AiSEG2 web interface displays climate data across multiple pages at
+/// `/page/airenvironment/41?page={n}`. Each page can contain up to 3 location entries
+/// identified by base element IDs (#base1_1, #base2_1, #base3_1).
+///
+/// # Example Usage
+/// ```rust
+/// let client = Arc::new(Client::new(config));
+/// let collector = ClimateMetricCollector::new(client);
+/// let metrics = collector.collect(Local::now()).await?;
+/// ```
 pub struct ClimateMetricCollector {
     client: Arc<Client>,
 }
 
 impl ClimateMetricCollector {
+    /// Creates a new ClimateMetricCollector instance.
+    ///
+    /// # Arguments
+    /// * `client` - Shared reference to the AiSEG2 HTTP client for making requests
+    ///
+    /// # Returns
+    /// A new instance of ClimateMetricCollector ready to collect climate metrics
     pub fn new(client: Arc<Client>) -> Self {
         Self { client }
     }
 }
 
 impl MetricCollector for ClimateMetricCollector {
+    /// Collects temperature and humidity metrics from all available climate monitoring locations.
+    ///
+    /// This method implements the MetricCollector trait's collect function, performing the following:
+    /// 1. Iterates through AiSEG2 air environment pages (up to 20 pages)
+    /// 2. For each page, attempts to parse up to 3 location entries
+    /// 3. Extracts temperature and humidity values for each location
+    /// 4. Returns a vector of DataPointBuilder instances for InfluxDB
+    ///
+    /// # Arguments
+    /// * `timestamp` - The timestamp to assign to all collected metrics
+    ///
+    /// # Returns
+    /// A future that resolves to a Result containing a vector of DataPointBuilder instances.
+    /// Each location produces 2 data points (temperature and humidity).
+    ///
+    /// # Pagination Behavior
+    /// The collector uses an early termination strategy - if parsing fails for any base element
+    /// (indicating no more data), it stops iteration and returns the metrics collected so far.
+    /// This prevents unnecessary HTTP requests to empty pages.
+    ///
+    /// # Error Handling
+    /// - HTTP request failures are propagated up as errors
+    /// - HTML parsing failures for individual locations trigger early termination
+    /// - The method ensures at least partial data collection even if some pages fail
     fn collect<'a>(
         &'a self,
         timestamp: DateTime<Local>,

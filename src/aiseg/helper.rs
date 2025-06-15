@@ -1,7 +1,38 @@
+//! Helper functions for parsing AiSEG2 HTML responses and data conversion.
+//!
+//! This module provides utility functions for:
+//! - Parsing HTML content from AiSEG2 web pages
+//! - Extracting numeric values from HTML elements
+//! - Converting between different units (kW to W)
+//! - Date/time manipulation
+
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local, NaiveTime};
 use scraper::{Html, Selector};
 
+/// Parses text content from an HTML element.
+///
+/// This function is used to extract text values from AiSEG2 HTML responses,
+/// such as metric names and labels. It ensures the element has actual content
+/// by checking for child nodes.
+///
+/// # Arguments
+///
+/// * `document` - The parsed HTML document
+/// * `selector` - CSS selector string (e.g., "#h_title", ".meter-name")
+///
+/// # Returns
+///
+/// * `Ok(String)` - The concatenated text content from the element and its children
+/// * `Err` - If the selector is invalid, no element matches, or the element has no children
+///
+/// # Example
+///
+/// ```no_run
+/// let html = Html::parse_document(r#"<div id="h_title">太陽光発電量</div>"#);
+/// let title = parse_text_from_html(&html, "#h_title")?;
+/// assert_eq!(title, "太陽光発電量");
+/// ```
 pub fn parse_text_from_html(document: &Html, selector: &str) -> Result<String> {
     let selector = html_selector(selector)?;
     let element = document
@@ -14,6 +45,26 @@ pub fn parse_text_from_html(document: &Html, selector: &str) -> Result<String> {
     Ok(element.text().collect::<String>())
 }
 
+/// Creates a CSS selector from a string.
+///
+/// This is a wrapper around scraper's Selector::parse that converts
+/// parsing errors into anyhow errors for consistent error handling.
+///
+/// # Arguments
+///
+/// * `selector` - CSS selector string
+///
+/// # Returns
+///
+/// * `Ok(Selector)` - A parsed selector ready for use
+/// * `Err` - If the selector syntax is invalid
+///
+/// # Examples
+///
+/// Valid selectors:
+/// - `"#id"` - ID selector
+/// - `".class"` - Class selector
+/// - `"div > span"` - Complex selector
 pub fn html_selector(selector: &str) -> Result<Selector> {
     match Selector::parse(selector) {
         Ok(s) => Ok(s),
@@ -21,6 +72,34 @@ pub fn html_selector(selector: &str) -> Result<Selector> {
     }
 }
 
+/// Parses a floating-point number from an HTML element.
+///
+/// This function extracts numeric values from HTML elements that may contain
+/// units or other non-numeric characters. It filters out everything except
+/// digits and decimal points before parsing.
+///
+/// # Arguments
+///
+/// * `document` - The parsed HTML document
+/// * `selector` - CSS selector for the element containing the numeric value
+///
+/// # Returns
+///
+/// * `Ok(f64)` - The parsed numeric value
+/// * `Err` - If the element is not found, has no text, or contains no valid number
+///
+/// # Example
+///
+/// ```no_run
+/// // Parses "123.45" from "123.45kW"
+/// let html = Html::parse_document(r#"<div id="val_kwh">123.45kW</div>"#);
+/// let value = parse_f64_from_html(&html, "#val_kwh")?;
+/// assert_eq!(value, 123.45);
+/// ```
+///
+/// # Note
+///
+/// This function ignores negative signs, so "-123.45" becomes 123.45
 pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64> {
     let selector = html_selector(selector)?;
     let element = document
@@ -36,16 +115,79 @@ pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64> {
         .context("Failed to parse value")
 }
 
+/// Normalizes a DateTime to the beginning of the day (00:00:00).
+///
+/// This function is used to ensure consistent date handling for daily metrics,
+/// where the time component should always be midnight.
+///
+/// # Arguments
+///
+/// * `date` - Any DateTime in the local timezone
+///
+/// # Returns
+///
+/// The same date with time set to 00:00:00
+///
+/// # Example
+///
+/// ```no_run
+/// let date = Local::now(); // e.g., 2024-06-15 14:30:45
+/// let normalized = day_of_beginning(&date); // 2024-06-15 00:00:00
+/// ```
+///
+/// # Safety
+///
+/// The unwrap is safe because with_time only fails if the resulting DateTime
+/// would be out of range. Since we're setting to midnight (00:00:00) using
+/// NaiveTime::default(), this is safe for all valid input dates.
 pub fn day_of_beginning(date: &DateTime<Local>) -> DateTime<Local> {
     date.with_time(NaiveTime::default()).unwrap()
 }
 
-pub fn f64_to_i64(kw: f64) -> i64 {
-    kw.trunc() as i64
+/// Truncates a floating-point number to an integer.
+///
+/// This function removes the decimal part without rounding.
+/// Used for converting metric values that should be whole numbers.
+///
+/// # Arguments
+///
+/// * `value` - The floating-point value to truncate
+///
+/// # Returns
+///
+/// The integer part of the value
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(truncate_to_i64(123.99), 123);
+/// assert_eq!(truncate_to_i64(-123.99), -123);
+/// ```
+pub fn truncate_to_i64(value: f64) -> i64 {
+    value.trunc() as i64
 }
 
-pub fn f64_kw_to_i64_watt(kw: f64) -> i64 {
-    f64_to_i64(kw * 1000.0)
+/// Converts kilowatts to watts, truncating to whole watts.
+///
+/// This function is used to convert power values from the AiSEG2 system
+/// (which reports in kW) to watts for storage in InfluxDB.
+///
+/// # Arguments
+///
+/// * `kw` - Power value in kilowatts
+///
+/// # Returns
+///
+/// Power value in watts (truncated to integer)
+///
+/// # Example
+///
+/// ```
+/// assert_eq!(kilowatts_to_watts(1.5), 1500);
+/// assert_eq!(kilowatts_to_watts(2.345), 2345); // Truncates, not rounds
+/// ```
+pub fn kilowatts_to_watts(kw: f64) -> i64 {
+    truncate_to_i64(kw * 1000.0)
 }
 
 #[cfg(test)]
@@ -185,48 +327,48 @@ mod tests {
         }
 
         #[test]
-        fn test_f64_to_i64_positive() {
-            assert_eq!(f64_to_i64(123.45), 123);
-            assert_eq!(f64_to_i64(123.99), 123);
-            assert_eq!(f64_to_i64(123.0), 123);
+        fn test_truncate_to_i64_positive() {
+            assert_eq!(truncate_to_i64(123.45), 123);
+            assert_eq!(truncate_to_i64(123.99), 123);
+            assert_eq!(truncate_to_i64(123.0), 123);
         }
 
         #[test]
-        fn test_f64_to_i64_negative() {
-            assert_eq!(f64_to_i64(-123.45), -123);
-            assert_eq!(f64_to_i64(-123.99), -123);
-            assert_eq!(f64_to_i64(-123.0), -123);
+        fn test_truncate_to_i64_negative() {
+            assert_eq!(truncate_to_i64(-123.45), -123);
+            assert_eq!(truncate_to_i64(-123.99), -123);
+            assert_eq!(truncate_to_i64(-123.0), -123);
         }
 
         #[test]
-        fn test_f64_to_i64_zero() {
-            assert_eq!(f64_to_i64(0.0), 0);
-            assert_eq!(f64_to_i64(0.9), 0);
-            assert_eq!(f64_to_i64(-0.9), 0);
+        fn test_truncate_to_i64_zero() {
+            assert_eq!(truncate_to_i64(0.0), 0);
+            assert_eq!(truncate_to_i64(0.9), 0);
+            assert_eq!(truncate_to_i64(-0.9), 0);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_positive() {
-            assert_eq!(f64_kw_to_i64_watt(1.5), 1500);
-            assert_eq!(f64_kw_to_i64_watt(2.345), 2345);
-            assert_eq!(f64_kw_to_i64_watt(0.5), 500);
+        fn test_kilowatts_to_watts_positive() {
+            assert_eq!(kilowatts_to_watts(1.5), 1500);
+            assert_eq!(kilowatts_to_watts(2.345), 2345);
+            assert_eq!(kilowatts_to_watts(0.5), 500);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_negative() {
-            assert_eq!(f64_kw_to_i64_watt(-1.5), -1500);
-            assert_eq!(f64_kw_to_i64_watt(-2.345), -2345);
+        fn test_kilowatts_to_watts_negative() {
+            assert_eq!(kilowatts_to_watts(-1.5), -1500);
+            assert_eq!(kilowatts_to_watts(-2.345), -2345);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_zero() {
-            assert_eq!(f64_kw_to_i64_watt(0.0), 0);
+        fn test_kilowatts_to_watts_zero() {
+            assert_eq!(kilowatts_to_watts(0.0), 0);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_small_values() {
-            assert_eq!(f64_kw_to_i64_watt(0.001), 1);
-            assert_eq!(f64_kw_to_i64_watt(0.0001), 0);
+        fn test_kilowatts_to_watts_small_values() {
+            assert_eq!(kilowatts_to_watts(0.001), 1);
+            assert_eq!(kilowatts_to_watts(0.0001), 0);
         }
     }
 

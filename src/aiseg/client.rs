@@ -1,14 +1,52 @@
+//! HTTP client for communicating with the AiSEG2 system.
+//!
+//! This module provides a client that handles HTTP requests to the AiSEG2
+//! web interface using digest authentication. The AiSEG2 system requires
+//! digest auth for all API endpoints.
+
 use crate::config;
 use anyhow::{anyhow, Context, Result};
 use diqwest::WithDigestAuth;
 use reqwest::Client as HttpClient;
 
+/// HTTP client for AiSEG2 API communication.
+///
+/// This client wraps the reqwest HTTP client and adds digest authentication
+/// support required by the AiSEG2 system. It handles all HTTP communication
+/// with the AiSEG2 device, including authentication and error handling.
+///
+/// # Authentication
+///
+/// The AiSEG2 system uses HTTP digest authentication. This client automatically
+/// handles the authentication challenge-response flow using the configured
+/// username and password.
 pub struct Client {
+    /// Underlying HTTP client from reqwest
     http_client: HttpClient,
+    /// Configuration containing base URL and credentials
     config: config::Aiseg2Config,
 }
 
 impl Client {
+    /// Creates a new AiSEG2 HTTP client.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration containing the AiSEG2 base URL, username, and password
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use crate::config::Aiseg2Config;
+    ///
+    /// let config = Aiseg2Config {
+    ///     url: "http://192.168.1.100".to_string(),
+    ///     user: "admin".to_string(),
+    ///     password: "password".to_string(),
+    /// };
+    ///
+    /// let client = Client::new(config);
+    /// ```
     pub fn new(config: config::Aiseg2Config) -> Self {
         let http_client = HttpClient::new();
         Self {
@@ -17,6 +55,42 @@ impl Client {
         }
     }
 
+    /// Performs an HTTP GET request to the AiSEG2 system.
+    ///
+    /// This method constructs the full URL by combining the base URL from
+    /// configuration with the provided path, then sends a GET request with
+    /// digest authentication.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The API endpoint path (e.g., "/page/electricflow/111")
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(String)` - The response body as a string on successful requests (2xx status)
+    /// * `Err(anyhow::Error)` - An error containing status code and response body for failed requests
+    ///
+    /// # Errors
+    ///
+    /// This method can fail in several ways:
+    /// - Network connectivity issues
+    /// - Authentication failures (401 Unauthorized)
+    /// - Server errors (5xx status codes)
+    /// - Invalid paths (404 Not Found)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # async fn example() -> anyhow::Result<()> {
+    /// # let client = Client::new(config);
+    /// // Fetch current power flow data
+    /// let html = client.get("/page/electricflow/111").await?;
+    ///
+    /// // Fetch daily total graph
+    /// let graph_data = client.get("/page/graph/51111?data=...").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get(&self, path: &str) -> Result<String> {
         let url = format!("{}{}", self.config.url, path);
         let response = self
@@ -47,19 +121,11 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito;
-
-    fn test_config() -> config::Aiseg2Config {
-        config::Aiseg2Config {
-            url: "http://test.local".to_string(),
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        }
-    }
+    use crate::aiseg::test_utils::test_config;
 
     #[test]
     fn test_client_new() {
-        let config = test_config();
+        let config = test_config("http://test.local".to_string());
         let client = Client::new(config);
 
         assert_eq!(client.config.url, "http://test.local");
@@ -80,11 +146,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/test/path").await;
@@ -106,11 +168,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/not/found").await;
@@ -136,11 +194,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/error").await;
@@ -166,11 +220,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/api/data").await;
@@ -201,11 +251,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/page/electricflow/111").await;
@@ -220,11 +266,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_connection_error() {
         // Use a non-existent server URL
-        let config = config::Aiseg2Config {
-            url: "http://non-existent-server.local:12345".to_string(),
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config("http://non-existent-server.local:12345".to_string());
 
         let client = Client::new(config);
         let result = client.get("/test").await;

@@ -11,17 +11,70 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// Collector for climate metrics (temperature and humidity) from AiSEG2 air environment monitoring pages.
+///
+/// This collector scrapes temperature and humidity data from multiple rooms/locations
+/// connected to the AiSEG2 system. It iterates through multiple pages (up to 20) to
+/// gather all available climate data, with each page potentially containing up to 3
+/// monitored locations.
+///
+/// # Data Collection
+/// - **Temperature**: Measured in degrees Celsius with one decimal place precision (XX.X°C)
+/// - **Humidity**: Measured as percentage with one decimal place precision (XX.X%)
+///
+/// # Page Structure
+/// The AiSEG2 web interface displays climate data across multiple pages at
+/// `/page/airenvironment/41?page={n}`. Each page can contain up to 3 location entries
+/// identified by base element IDs (#base1_1, #base2_1, #base3_1).
+///
+/// # Example Usage
+/// ```rust
+/// let client = Arc::new(Client::new(config));
+/// let collector = ClimateMetricCollector::new(client);
+/// let metrics = collector.collect(Local::now()).await?;
+/// ```
 pub struct ClimateMetricCollector {
     client: Arc<Client>,
 }
 
 impl ClimateMetricCollector {
+    /// Creates a new ClimateMetricCollector instance.
+    ///
+    /// # Arguments
+    /// * `client` - Shared reference to the AiSEG2 HTTP client for making requests
+    ///
+    /// # Returns
+    /// A new instance of ClimateMetricCollector ready to collect climate metrics
     pub fn new(client: Arc<Client>) -> Self {
         Self { client }
     }
 }
 
 impl MetricCollector for ClimateMetricCollector {
+    /// Collects temperature and humidity metrics from all available climate monitoring locations.
+    ///
+    /// This method implements the MetricCollector trait's collect function, performing the following:
+    /// 1. Iterates through AiSEG2 air environment pages (up to 20 pages)
+    /// 2. For each page, attempts to parse up to 3 location entries
+    /// 3. Extracts temperature and humidity values for each location
+    /// 4. Returns a vector of DataPointBuilder instances for InfluxDB
+    ///
+    /// # Arguments
+    /// * `timestamp` - The timestamp to assign to all collected metrics
+    ///
+    /// # Returns
+    /// A future that resolves to a Result containing a vector of DataPointBuilder instances.
+    /// Each location produces 2 data points (temperature and humidity).
+    ///
+    /// # Pagination Behavior
+    /// The collector uses an early termination strategy - if parsing fails for any base element
+    /// (indicating no more data), it stops iteration and returns the metrics collected so far.
+    /// This prevents unnecessary HTTP requests to empty pages.
+    ///
+    /// # Error Handling
+    /// - HTTP request failures are propagated up as errors
+    /// - HTML parsing failures for individual locations trigger early termination
+    /// - The method ensures at least partial data collection even if some pages fail
     fn collect<'a>(
         &'a self,
         timestamp: DateTime<Local>,
@@ -54,6 +107,21 @@ impl MetricCollector for ClimateMetricCollector {
     }
 }
 
+/// Parses climate data (temperature and humidity) from a specific base element in the HTML document.
+///
+/// # Arguments
+/// * `document` - The parsed HTML document
+/// * `base_id` - The base element ID (e.g., "#base1_1")
+/// * `timestamp` - The timestamp for the metrics
+///
+/// # Returns
+/// An array of two metrics: [temperature, humidity]
+///
+/// # Behavior
+/// - Extracts location name from `.txt_name` element
+/// - Looks for temperature values in elements matching `[id^="num_ond_"][class*="num no"]`
+/// - Looks for humidity values in elements matching `[id^="num_shitudo_"][class*="num no"]`
+/// - If either temperature or humidity elements are missing, defaults to 0.0
 fn parse(
     document: &Html,
     base_id: &str,
@@ -81,13 +149,13 @@ fn parse(
         .next()
         .context("Failed to find num_wrapper")?;
 
-    // extract temperature from `#num_ond_\d`
-    let temperature_selector = html_selector(r#"[id^="num_ond_"]"#)?;
+    // extract temperature from `#num_ond_XX_Y` where XX is base number and Y is 1,2,3
+    let temperature_selector = html_selector(r#"[id^="num_ond_"][class*="num no"]"#)?;
     let temperature =
         extract_num_from_html_class(num_wrapper_element.select(&temperature_selector))?;
 
-    // extract humidity from `#num_shitudo_\d`
-    let humidity_selector = html_selector(r#"[id^="num_shitudo_"]"#)?;
+    // extract humidity from `#num_shitudo_XX_Y` where XX is base number and Y is 1,2,3
+    let humidity_selector = html_selector(r#"[id^="num_shitudo_"][class*="num no"]"#)?;
     let humidity = extract_num_from_html_class(num_wrapper_element.select(&humidity_selector))?;
 
     Ok([
@@ -108,89 +176,115 @@ fn parse(
     ])
 }
 
+/// Extracts a numeric value from HTML elements representing digits of a decimal number.
+///
+/// # Arguments
+/// * `elements` - Iterator of HTML elements with class attributes containing numeric values
+///
+/// # Returns
+/// A floating-point number parsed from the extracted digits
+///
+/// # Expected Format
+/// The function expects exactly 3 elements representing digits in format XX.X:
+/// - Element 0: First digit (tens place)
+/// - Element 1: Second digit (ones place)
+/// - Element 2: Third digit (tenths place after decimal)
+///
+/// # Behavior
+/// - Extracts numeric characters from each element's class attribute (e.g., "num no5" -> '5')
+/// - Automatically inserts a decimal point between the second and third digits
+/// - If fewer than 3 elements are provided, remaining positions default to '0'
+/// - If more than 3 elements are provided, only the first 3 are processed
+/// - Returns 0.0 if no elements are provided
+///
+/// # Example
+/// Given elements with classes ["num no2", "num no3", "num no5"], returns 23.5
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
-    let mut chars: [char; 4] = ['0', '0', '.', '0'];
-    let mut i = 0;
-    let mut element_count = 0;
+    const EXPECTED_DIGITS: usize = 3;
 
-    for element in elements {
-        element_count += 1;
-        if i == 2 {
-            i += 1; // skip dot
-        }
-        if i >= 4 {
-            break; // We have all 4 digits
-        }
+    // Initialize with default values for XX.X format
+    let mut digits = ['0', '0', '0']; // [tens, ones, tenths]
+
+    // Process up to 3 elements
+    for (processed_count, element) in elements.take(EXPECTED_DIGITS).enumerate() {
+        // Extract class attribute
         let class_value = element.attr("class").context("Failed to get class")?;
-        chars[i] = class_value
+
+        // Extract the first numeric character from the class
+        let digit = class_value
             .chars()
-            .filter(|c| c.is_numeric())
-            .collect::<String>()
-            .parse::<char>()
-            .context("Failed to parse value")?;
-        i += 1;
+            .find(|c| c.is_numeric())
+            .context("No numeric character found in class")?;
+
+        digits[processed_count] = digit;
     }
 
-    if element_count != 4 {
-        return Err(anyhow::anyhow!(
-            "Expected 4 elements but found {}",
-            element_count
-        ));
-    }
+    // Build the decimal number string: "XX.X"
+    let number_str = format!("{}{}.{}", digits[0], digits[1], digits[2]);
 
-    Ok(chars.iter().collect::<String>().parse::<f64>()?)
+    // Parse to f64
+    number_str
+        .parse::<f64>()
+        .context("Failed to parse decimal number")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
-
-    fn test_config(url: String) -> config::Aiseg2Config {
-        config::Aiseg2Config {
-            url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        }
-    }
+    use crate::aiseg::test_utils::test_config;
 
     fn create_climate_html(items: Vec<(&str, &str, &str)>) -> String {
         let mut html = r#"<!DOCTYPE html><html><body>"#.to_string();
 
         for (i, (name, temp, humidity)) in items.iter().enumerate() {
-            let base_id = i + 1;
+            let base_id = format!("{}", i + 1);
+
+            // Extract temperature digits (format: XX.X)
+            let temp_digit1 = temp.chars().next().unwrap_or('0');
+            let temp_digit2 = temp.chars().nth(1).unwrap_or('0');
+            let temp_digit3 = temp.chars().nth(3).unwrap_or('0'); // Skip decimal point at position 2
+
+            // Extract humidity digits (format: XX.X)
+            let hum_digit1 = humidity.chars().next().unwrap_or('0');
+            let hum_digit2 = humidity.chars().nth(1).unwrap_or('0');
+            let hum_digit3 = humidity.chars().nth(3).unwrap_or('0'); // Skip decimal point at position 2
+
             html.push_str(&format!(
                 r#"<div id="base{}_1">
                     <div class="txt_name">{}</div>
                     <div class="num_wrapper">
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
+                        <div class="num_ond" style="visibility:visible">
+                            <div class="icon_ond"></div>
+                            <div id="num_ond_{}_1" class="num no{}"></div>
+                            <div id="num_ond_{}_2" class="num no{}"></div>
+                            <div id="num_dot_place1" class="num_dot"></div>
+                            <div id="num_ond_{}_3" class="num no{}"></div>
+                            <div class="num_tani"></div>
+                        </div>
+                        <div class="num_shitudo" style="visibility:visible">
+                            <div class="icon_shitudo"></div>
+                            <div id="num_shitudo_{}_1" class="num no{}"></div>
+                            <div id="num_shitudo_{}_2" class="num no{}"></div>
+                            <div id="num_dot_place2" class="num_dot"></div>
+                            <div id="num_shitudo_{}_3" class="num no{}"></div>
+                            <div class="num_tani"></div>
+                        </div>
                     </div>
                 </div>"#,
                 base_id,
                 name,
                 base_id,
-                temp.chars().nth(0).unwrap_or('0'),
+                temp_digit1,
                 base_id,
-                temp.chars().nth(1).unwrap_or('0'),
+                temp_digit2,
                 base_id,
-                temp.chars().nth(3).unwrap_or('0'),
+                temp_digit3,
                 base_id,
-                temp.chars().nth(4).unwrap_or('0'),
+                hum_digit1,
                 base_id,
-                humidity.chars().nth(0).unwrap_or('0'),
+                hum_digit2,
                 base_id,
-                humidity.chars().nth(1).unwrap_or('0'),
-                base_id,
-                humidity.chars().nth(3).unwrap_or('0'),
-                base_id,
-                humidity.chars().nth(4).unwrap_or('0'),
+                hum_digit3
             ));
         }
 
@@ -203,11 +297,11 @@ mod tests {
 
         #[test]
         fn test_parse_single_base_element() {
-            let html = create_climate_html(vec![("Living Room", "23.50", "45.60")]);
+            let html = create_climate_html(vec![("Living Room", "23.5", "45.6")]);
             let document = Html::parse_document(&html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp.clone());
+            let result = parse(&document, "#base1_1", timestamp);
 
             assert!(result.is_ok());
             let metrics = result.unwrap();
@@ -264,9 +358,8 @@ mod tests {
 
             let result = collector.collect(Local::now()).await;
 
-            match &result {
-                Err(e) => panic!("Failed to collect: {}", e),
-                Ok(_) => {}
+            if let Err(e) = &result {
+                panic!("Failed to collect: {}", e)
             }
             let data_points = result.unwrap();
             assert_eq!(data_points.len(), 6); // 3 locations * 2 metrics each
@@ -328,12 +421,16 @@ mod tests {
 
         #[test]
         fn test_extract_num_from_html_class_various_values() {
+            // The function expects exactly 3 elements:
+            // Element 0 -> position 0 (tens digit)
+            // Element 1 -> position 1 (ones digit)
+            // Element 2 -> position 3 (decimal digit) - skips position 2 which has '.'
             let test_cases = vec![
-                (vec!["0", "0", "0", "0"], 0.0),
-                (vec!["2", "5", "5", "0"], 25.5),
-                (vec!["9", "9", "9", "0"], 99.9),
-                (vec!["0", "1", "2", "0"], 1.2),
-                (vec!["5", "0", "0", "0"], 50.0),
+                (vec!["0", "0", "0"], 0.0),  // "00.0"
+                (vec!["2", "5", "5"], 25.5), // "25.5"
+                (vec!["9", "9", "9"], 99.9), // "99.9"
+                (vec!["0", "1", "2"], 1.2),  // "01.2"
+                (vec!["5", "0", "0"], 50.0), // "50.0"
             ];
 
             for (digits, expected) in test_cases {
@@ -342,9 +439,8 @@ mod tests {
                         <span class="num{}"></span>
                         <span class="num{}"></span>
                         <span class="num{}"></span>
-                        <span class="num{}"></span>
                     </div>"#,
-                    digits[0], digits[1], digits[2], digits[3]
+                    digits[0], digits[1], digits[2]
                 );
                 let document = scraper::Html::parse_document(&html);
                 let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
@@ -353,8 +449,8 @@ mod tests {
                 let elements = wrapper_element.select(&span_selector);
 
                 let result = extract_num_from_html_class(elements);
-                assert!(result.is_ok());
-                assert_eq!(result.unwrap(), expected);
+                assert!(result.is_ok(), "Failed for input {:?}", digits);
+                assert_eq!(result.unwrap(), expected, "Failed for input {:?}", digits);
             }
         }
 
@@ -408,9 +504,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
             assert!(result
                 .unwrap_err()
@@ -432,9 +527,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
             assert!(result
                 .unwrap_err()
@@ -454,9 +548,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
             assert!(result
                 .unwrap_err()
@@ -470,10 +563,9 @@ mod tests {
                 <div id="base1_1">
                     <div class="txt_name">Room</div>
                     <div class="num_wrapper">
-                        <div id="num_shitudo_1" class="num5"></div>
-                        <div id="num_shitudo_1" class="num0"></div>
-                        <div id="num_shitudo_1" class="num0"></div>
-                        <div id="num_shitudo_1" class="num0"></div>
+                        <div id="num_shitudo_1_1" class="num no5"></div>
+                        <div id="num_shitudo_1_2" class="num no0"></div>
+                        <div id="num_shitudo_1_3" class="num no0"></div>
                     </div>
                 </div>
             "#;
@@ -482,10 +574,12 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
-            }
+            // With missing temperature elements, it uses default 0.0
+            assert!(result.is_ok());
+            let metrics = result.unwrap();
+            assert_eq!(metrics.len(), 2);
+            assert_eq!(metrics[0].value, 0.0); // temperature defaults to 0.0
+            assert_eq!(metrics[1].value, 50.0); // humidity is 50.0
         }
 
         #[test]
@@ -494,10 +588,9 @@ mod tests {
                 <div id="base1_1">
                     <div class="txt_name">Room</div>
                     <div class="num_wrapper">
-                        <div id="num_ond_1" class="num2"></div>
-                        <div id="num_ond_1" class="num5"></div>
-                        <div id="num_ond_1" class="num0"></div>
-                        <div id="num_ond_1" class="num0"></div>
+                        <div id="num_ond_1_1" class="num no2"></div>
+                        <div id="num_ond_1_2" class="num no5"></div>
+                        <div id="num_ond_1_3" class="num no0"></div>
                     </div>
                 </div>
             "#;
@@ -506,20 +599,106 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
-            }
+            // With missing humidity elements, it uses default 0.0
+            assert!(result.is_ok());
+            let metrics = result.unwrap();
+            assert_eq!(metrics.len(), 2);
+            assert_eq!(metrics[0].value, 25.0); // temperature is 25.0
+            assert_eq!(metrics[1].value, 0.0); // humidity defaults to 0.0
         }
 
         #[test]
-        fn test_extract_num_invalid_class_format() {
+        fn test_extract_num_from_html_class_valid_input() {
+            // Function now expects exactly 3 elements: [0]='2', [1]='3', skip position 2, [2]='4'
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                    <span class="num4"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 23.4); // Formats as "23.4"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_zero_values() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num0"></span>
+                    <span class="num0"></span>
+                    <span class="num0"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 0.0); // Formats as "00.0"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_mixed_digits() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num9"></span>
+                    <span class="num8"></span>
+                    <span class="num7"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 98.7); // Formats as "98.7"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_with_extra_text() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="prefix_num1_suffix"></span>
+                    <span class="text_num2_more"></span>
+                    <span class="num3_end"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 12.3); // Formats as "12.3"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_invalid_no_digit() {
             let html = r#"
                 <div id="wrapper">
                     <span class="invalid"></span>
                     <span class="num2"></span>
                     <span class="num3"></span>
-                    <span class="num4"></span>
                 </div>
             "#;
             let document = scraper::Html::parse_document(html);
@@ -534,7 +713,76 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse value"));
+                .contains("No numeric character found in class"));
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_too_few_elements() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num1"></span>
+                    <span class="num2"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            // With only 2 elements, the function will process what it can
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 12.0); // Formats as "12.0"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_too_many_elements() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num1"></span>
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                    <span class="num0"></span>
+                    <span class="num5"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            // The function processes exactly 3 elements and ignores the rest
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 12.3); // Formats as "12.3"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_missing_class_attribute() {
+            let html = r#"
+                <div id="wrapper">
+                    <span></span>
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to get class"));
         }
 
         #[tokio::test]

@@ -1,6 +1,6 @@
 use crate::aiseg::client::Client;
 use crate::aiseg::helper::{
-    f64_kw_to_i64_watt, f64_to_i64, parse_f64_from_html, parse_text_from_html,
+    kilowatts_to_watts, parse_f64_from_html, parse_text_from_html, truncate_to_i64,
 };
 use crate::model::{
     merge_same_name_power_status_breakdown_metrics, DataPointBuilder, Measurement, MetricCollector,
@@ -13,15 +13,39 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// Collector for real-time power metrics from AiSEG2.
+///
+/// This collector fetches instantaneous power generation and consumption data,
+/// including both summary totals and detailed breakdowns by source/device.
+/// It implements the MetricCollector trait to integrate with the collection system.
+///
+/// # Metrics Collected
+/// - Total power generation and consumption (W)
+/// - Net power flow (buying/selling)
+/// - Breakdown of generation sources (solar, fuel cell, etc.)
+/// - Breakdown of consumption by device/circuit
 pub struct PowerMetricCollector {
+    /// HTTP client for communicating with AiSEG2
     client: Arc<Client>,
 }
 
 impl PowerMetricCollector {
+    /// Creates a new PowerMetricCollector instance.
+    ///
+    /// # Arguments
+    /// * `client` - Shared HTTP client configured for AiSEG2 communication
     pub fn new(client: Arc<Client>) -> Self {
         Self { client }
     }
 
+    /// Collects power metrics from the main electricity flow page.
+    ///
+    /// Fetches the main power overview page which contains:
+    /// - Total generation and consumption values
+    /// - Breakdown of generation sources
+    ///
+    /// # Returns
+    /// A vector of DataPointBuilder instances for all metrics found on the main page
     async fn collect_from_main_page(&self) -> Result<Vec<Box<dyn DataPointBuilder>>> {
         let response = self.client.get("/page/electricflow/111").await?;
         let document = Html::parse_document(&response);
@@ -34,9 +58,20 @@ impl PowerMetricCollector {
         .collect())
     }
 
+    /// Extracts summary power metrics from the main page.
+    ///
+    /// Parses the HTML to find:
+    /// - Total generation power (総発電電力)
+    /// - Total consumption power (総消費電力)
+    /// - Net power flow (売買電力) - positive when selling, negative when buying
+    ///
+    /// Values are converted from kW to W for consistency.
+    ///
+    /// # Arguments
+    /// * `document` - Parsed HTML document from the main power page
     fn collect_total_metrics(&self, document: &Html) -> Result<Vec<Box<dyn DataPointBuilder>>> {
-        let generation = f64_kw_to_i64_watt(parse_f64_from_html(document, "#g_capacity")?);
-        let consumption = f64_kw_to_i64_watt(parse_f64_from_html(document, "#u_capacity")?);
+        let generation = kilowatts_to_watts(parse_f64_from_html(document, "#g_capacity")?);
+        let consumption = kilowatts_to_watts(parse_f64_from_html(document, "#u_capacity")?);
 
         Ok(vec![
             Box::new(PowerStatusMetric {
@@ -57,6 +92,17 @@ impl PowerMetricCollector {
         ])
     }
 
+    /// Extracts detailed generation source metrics from the main page.
+    ///
+    /// Iterates through up to 4 generation sources (solar, fuel cell, etc.)
+    /// and collects the power output for each. Stops when no more sources
+    /// are found in the HTML.
+    ///
+    /// # Arguments
+    /// * `document` - Parsed HTML document from the main power page
+    ///
+    /// # Returns
+    /// Power breakdown metrics for each active generation source
     fn collect_generation_detail_metrics(
         &self,
         document: &Html,
@@ -67,7 +113,7 @@ impl PowerMetricCollector {
                 Ok(name) => name,
                 Err(_) => break,
             };
-            let value = f64_to_i64(parse_f64_from_html(
+            let value = truncate_to_i64(parse_f64_from_html(
                 document,
                 &format!("#g_d_{}_capacity", i),
             )?);
@@ -81,15 +127,50 @@ impl PowerMetricCollector {
         Ok(res)
     }
 
+    /// Collects detailed consumption metrics from dedicated pages.
+    ///
+    /// This is a wrapper method that delegates to collect_consumption_detail_metrics.
+    /// Separated from main page collection as consumption details are on different pages.
     async fn collect_from_consumption_detail_pages(
         &self,
     ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
         self.collect_consumption_detail_metrics().await
     }
 
+    /// Orchestrates the collection of consumption metrics from multiple pages.
+    ///
+    /// Collects consumption data from paginated results and merges duplicate
+    /// entries (same device appearing on multiple pages). This ensures each
+    /// device/circuit appears only once with its total consumption.
+    ///
+    /// # Returns
+    /// Merged and deduplicated consumption metrics ready for InfluxDB
     async fn collect_consumption_detail_metrics(&self) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+        let mut all_items: Vec<PowerStatusBreakdownMetric> = vec![];
+
+        let items = self.collect_consumption_pages().await?;
+        all_items.extend(items);
+
+        let merged = merge_same_name_power_status_breakdown_metrics(all_items);
+        Ok(merged
+            .into_iter()
+            .map(|item| Box::new(item) as Box<dyn DataPointBuilder>)
+            .collect())
+    }
+
+    /// Iterates through paginated consumption detail pages.
+    ///
+    /// The AiSEG2 system paginates consumption devices across multiple pages.
+    /// This method:
+    /// - Fetches up to 20 pages of consumption data
+    /// - Detects when pagination is complete (duplicate device names)
+    /// - Collects all unique consumption metrics
+    ///
+    /// # Returns
+    /// All consumption metrics from all pages (may contain duplicates)
+    async fn collect_consumption_pages(&self) -> Result<Vec<PowerStatusBreakdownMetric>> {
         let mut last_page_names = "".to_string();
-        let mut list: Vec<PowerStatusBreakdownMetric> = vec![];
+        let mut all_items: Vec<PowerStatusBreakdownMetric> = vec![];
 
         for page in 1..=20 {
             let response = self
@@ -98,29 +179,10 @@ impl PowerMetricCollector {
                 .await?;
             let document = Html::parse_document(&response);
 
-            let mut items: Vec<PowerStatusBreakdownMetric> = vec![];
-            for i in 1..=10 {
-                let name = match parse_text_from_html(
-                    &document,
-                    &format!("#stage_{} > div.c_device", i),
-                ) {
-                    Ok(name) => name,
-                    Err(_) => break,
-                };
-                let watt =
-                    match parse_f64_from_html(&document, &format!("#stage_{} > div.c_value", i)) {
-                        Ok(kw) => f64_to_i64(kw),
-                        Err(_) => 0,
-                    };
-                items.push(PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Consumption,
-                    name: format!("{}({})", name, Unit::Watt),
-                    value: watt,
-                });
-            }
+            let page_items = self.parse_consumption_page(&document)?;
 
-            let names = items
+            // Check if we've seen these names before (pagination complete)
+            let names = page_items
                 .iter()
                 .map(|item| item.name.clone())
                 .collect::<Vec<String>>()
@@ -129,18 +191,66 @@ impl PowerMetricCollector {
                 break;
             }
             last_page_names = names;
-            list.extend(items);
+            all_items.extend(page_items);
         }
 
-        let merged = merge_same_name_power_status_breakdown_metrics(list);
-        Ok(merged
-            .into_iter()
-            .map(|item| Box::new(item) as Box<dyn DataPointBuilder>)
-            .collect())
+        Ok(all_items)
+    }
+
+    /// Parses a single consumption detail page.
+    ///
+    /// Each page can contain up to 10 consumption devices/circuits.
+    /// For each device found:
+    /// - Extracts the device name
+    /// - Extracts the power consumption (defaults to 0 if parsing fails)
+    /// - Creates a PowerStatusBreakdownMetric
+    ///
+    /// # Arguments
+    /// * `document` - Parsed HTML document from a consumption detail page
+    ///
+    /// # Returns
+    /// Consumption metrics for all devices found on this page
+    fn parse_consumption_page(&self, document: &Html) -> Result<Vec<PowerStatusBreakdownMetric>> {
+        let mut items: Vec<PowerStatusBreakdownMetric> = vec![];
+
+        for i in 1..=10 {
+            let name = match parse_text_from_html(document, &format!("#stage_{} > div.c_device", i))
+            {
+                Ok(name) => name,
+                Err(_) => break,
+            };
+            let watt = match parse_f64_from_html(document, &format!("#stage_{} > div.c_value", i)) {
+                Ok(kw) => truncate_to_i64(kw),
+                Err(_) => 0,
+            };
+            items.push(PowerStatusBreakdownMetric {
+                measurement: Measurement::Power,
+                category: PowerStatusBreakdownMetricCategory::Consumption,
+                name: format!("{}({})", name, Unit::Watt),
+                value: watt,
+            });
+        }
+
+        Ok(items)
     }
 }
 
 impl MetricCollector for PowerMetricCollector {
+    /// Collects all power metrics from AiSEG2.
+    ///
+    /// This is the main entry point for power metric collection. It:
+    /// 1. Fetches the main power page for totals and generation details
+    /// 2. Fetches consumption detail pages for device-level metrics
+    /// 3. Returns all metrics as DataPointBuilder instances
+    ///
+    /// The timestamp parameter is ignored as power metrics represent
+    /// instantaneous values at collection time.
+    ///
+    /// # Arguments
+    /// * `_` - Timestamp (unused for power metrics)
+    ///
+    /// # Returns
+    /// A future that resolves to all collected power metrics
     fn collect<'a>(
         &'a self,
         _: DateTime<Local>,
@@ -160,16 +270,7 @@ impl MetricCollector for PowerMetricCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
-    use mockito;
-
-    fn test_config(url: String) -> config::Aiseg2Config {
-        config::Aiseg2Config {
-            url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        }
-    }
+    use crate::aiseg::test_utils::test_config;
 
     fn create_main_page_html(
         g_capacity: &str,
@@ -676,7 +777,7 @@ mod tests {
 
             assert!(result.is_ok());
             let metrics = result.unwrap();
-            assert!(metrics.len() > 0);
+            assert!(!metrics.is_empty());
         }
     }
 
@@ -686,7 +787,7 @@ mod tests {
         #[test]
         fn test_collect_total_metrics_missing_g_capacity() {
             let html = r#"<html><body><div id="u_capacity">3.8</div></body></html>"#;
-            let document = Html::parse_document(&html);
+            let document = Html::parse_document(html);
             let collector = PowerMetricCollector::new(Arc::new(Client::new(test_config(
                 "http://test".to_string(),
             ))));
@@ -703,7 +804,7 @@ mod tests {
         #[test]
         fn test_collect_total_metrics_missing_u_capacity() {
             let html = r#"<html><body><div id="g_capacity">2.5</div></body></html>"#;
-            let document = Html::parse_document(&html);
+            let document = Html::parse_document(html);
             let collector = PowerMetricCollector::new(Arc::new(Client::new(test_config(
                 "http://test".to_string(),
             ))));
@@ -723,7 +824,7 @@ mod tests {
                 <div id="g_capacity">invalid</div>
                 <div id="u_capacity">3.8</div>
             </body></html>"#;
-            let document = Html::parse_document(&html);
+            let document = Html::parse_document(html);
             let collector = PowerMetricCollector::new(Arc::new(Client::new(test_config(
                 "http://test".to_string(),
             ))));

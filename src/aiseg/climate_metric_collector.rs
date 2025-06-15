@@ -147,25 +147,40 @@ fn parse(
 /// # Example
 /// Given elements with classes ["num no2", "num no3", "num no5"], returns 23.5
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
-    let mut chars: [char; 4] = ['0', '0', '.', '0'];
-    let mut i = 0;
-    for element in elements {
-        if i == 2 {
-            i += 1; // skip dot
-        }
+    const EXPECTED_DIGITS: usize = 3;
+    
+    // Initialize with default values for XX.X format
+    let mut digits = vec!['0', '0', '0']; // [tens, ones, tenths]
+    let mut processed_count = 0;
+    
+    // Process up to 3 elements
+    for element in elements.take(EXPECTED_DIGITS) {
+        // Extract class attribute
         let class_value = element.attr("class").context("Failed to get class")?;
-        chars[i] = class_value
+        
+        // Extract the first numeric character from the class
+        let digit = class_value
             .chars()
             .filter(|c| c.is_numeric())
-            .collect::<String>()
-            .parse::<char>()
-            .context("Failed to parse value")?;
-        i += 1;
-        if i >= 4 {
-            break; // Stop after processing 3 elements
-        }
+            .next()
+            .context("No numeric character found in class")?;
+        
+        digits[processed_count] = digit;
+        processed_count += 1;
     }
-    Ok(chars.iter().collect::<String>().parse::<f64>()?)
+    
+    // Build the decimal number string: "XX.X"
+    let number_str = format!(
+        "{}{}.{}",
+        digits[0],
+        digits[1],
+        digits[2]
+    );
+    
+    // Parse to f64
+    number_str
+        .parse::<f64>()
+        .context("Failed to parse decimal number")
 }
 
 #[cfg(test)]
@@ -647,7 +662,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse value"));
+                .contains("No numeric character found in class"));
         }
 
         #[test]

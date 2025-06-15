@@ -168,3 +168,205 @@ async fn collect_past_total(
     }
     tracing::info!("Finished inserting last {} days.", days);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::InfluxConfig;
+    use crate::model::{DataPointBuilder, Measurement, PowerStatusMetric};
+    use anyhow::anyhow;
+    use chrono::{DateTime, Local};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use tokio::time::Duration;
+
+    // Mock MetricCollector implementation
+    struct MockMetricCollector {
+        should_fail: bool,
+    }
+
+    impl MockMetricCollector {
+        fn new(should_fail: bool) -> Self {
+            Self { should_fail }
+        }
+    }
+
+    impl MetricCollector for MockMetricCollector {
+        fn collect<'a>(
+            &'a self,
+            _timestamp: DateTime<Local>,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                if self.should_fail {
+                    Err(anyhow!("Mock collection failed"))
+                } else {
+                    let metrics: Vec<Box<dyn DataPointBuilder>> =
+                        vec![Box::new(PowerStatusMetric {
+                            measurement: Measurement::Power,
+                            name: "test".to_string(),
+                            value: 100,
+                        })];
+                    Ok(metrics)
+                }
+            })
+        }
+    }
+
+    mod with_timeout {
+        use super::*;
+
+        #[tokio::test]
+        async fn succeeds() {
+            // Task completes within timeout
+            let completed = Arc::new(AtomicBool::new(false));
+            let completed_clone = completed.clone();
+
+            with_timeout("test_task", async move {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                completed_clone.store(true, Ordering::SeqCst);
+            })
+            .await;
+
+            assert!(completed.load(Ordering::SeqCst));
+        }
+
+        #[tokio::test]
+        async fn fails() {
+            // Task exceeds timeout - this will log an error
+            let completed = Arc::new(AtomicBool::new(false));
+            let completed_clone = completed.clone();
+
+            with_timeout("test_task", async move {
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                completed_clone.store(true, Ordering::SeqCst);
+            })
+            .await;
+
+            // Task should not complete due to timeout
+            assert!(!completed.load(Ordering::SeqCst));
+        }
+    }
+
+    mod handle_task_result {
+        use super::*;
+        use tokio::task::JoinError;
+
+        #[test]
+        fn succeeds() {
+            // Test successful task completion
+            let result: Result<(), JoinError> = Ok(());
+            handle_task_result("test_task", result);
+            // Function should complete without panic
+        }
+
+        #[tokio::test]
+        async fn fails() {
+            // Test task failure
+            let handle = tokio::spawn(async {
+                panic!("Task panicked");
+            });
+
+            // Wait for the task to panic
+            let result = handle.await;
+
+            handle_task_result("test_task", result);
+            // Function should handle the error without panic
+        }
+    }
+
+    mod collect_past_total {
+        use super::*;
+
+        #[tokio::test]
+        async fn succeeds() {
+            // Mock successful collection and write
+            let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
+                Arc::new(vec![Box::new(MockMetricCollector::new(false))]);
+
+            let influx_config = InfluxConfig {
+                url: "http://localhost:8086".to_string(),
+                org: "test".to_string(),
+                bucket: "test".to_string(),
+                token: "test-token".to_string(),
+            };
+            let influx_client = Arc::new(influxdb::Client::new(influx_config));
+
+            // We can't easily test the actual write without a real InfluxDB instance,
+            // so we'll just verify the function completes without panic
+            collect_past_total(collectors, influx_client, 1).await;
+        }
+
+        #[tokio::test]
+        async fn fails() {
+            // Mock failed collection
+            let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
+                Arc::new(vec![Box::new(MockMetricCollector::new(true))]);
+
+            let influx_config = InfluxConfig {
+                url: "http://localhost:8086".to_string(),
+                org: "test".to_string(),
+                bucket: "test".to_string(),
+                token: "test-token".to_string(),
+            };
+            let influx_client = Arc::new(influxdb::Client::new(influx_config));
+
+            // Function should handle collection failures gracefully
+            collect_past_total(collectors, influx_client, 1).await;
+        }
+    }
+
+    mod create_collect_task {
+        use super::*;
+
+        #[tokio::test]
+        async fn succeeds() {
+            // Mock successful collection and write
+            let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
+                Arc::new(vec![Box::new(MockMetricCollector::new(false))]);
+
+            let influx_config = InfluxConfig {
+                url: "http://localhost:8086".to_string(),
+                org: "test".to_string(),
+                bucket: "test".to_string(),
+                token: "test-token".to_string(),
+            };
+            let influx_client = Arc::new(influxdb::Client::new(influx_config));
+
+            // Run once with minimal interval
+            create_collect_task(
+                influx_client,
+                collectors,
+                Duration::from_millis(1),
+                "test_task",
+            )
+            .await;
+        }
+
+        #[tokio::test]
+        async fn fails() {
+            // Test collection failure
+            let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
+                Arc::new(vec![Box::new(MockMetricCollector::new(true))]);
+
+            let influx_config = InfluxConfig {
+                url: "http://localhost:8086".to_string(),
+                org: "test".to_string(),
+                bucket: "test".to_string(),
+                token: "test-token".to_string(),
+            };
+            let influx_client = Arc::new(influxdb::Client::new(influx_config));
+
+            // Function should handle failures gracefully
+            create_collect_task(
+                influx_client,
+                collectors,
+                Duration::from_millis(1),
+                "test_task_fails",
+            )
+            .await;
+        }
+    }
+}

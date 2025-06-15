@@ -178,11 +178,11 @@ impl DataPointBuilder for ClimateStatusMetric {
     }
 }
 
+pub type CollectFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>;
+
 pub trait MetricCollector: Send + Sync {
-    fn collect<'a>(
-        &'a self,
-        timestamp: DateTime<Local>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>;
+    fn collect(&self, timestamp: DateTime<Local>) -> CollectFuture<'_>;
 }
 
 pub async fn batch_collect_metrics<'a>(

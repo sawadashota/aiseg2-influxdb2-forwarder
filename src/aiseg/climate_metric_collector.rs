@@ -38,7 +38,7 @@ impl MetricCollector for ClimateMetricCollector {
 
                 for i in 1..=3 {
                     let base_id = format!("#base{}_1", i);
-                    let metrics = match parse(&document, &base_id, timestamp.clone()) {
+                    let metrics = match parse(&document, &base_id, timestamp) {
                         Ok(metrics) => metrics,
                         Err(_) => break 'root,
                     };
@@ -96,7 +96,7 @@ fn parse(
             category: ClimateStatusMetricCategory::Temperature,
             name: name.to_string(),
             value: temperature,
-            timestamp: timestamp.clone(),
+            timestamp,
         },
         ClimateStatusMetric {
             measurement: Measurement::Climate,

@@ -100,13 +100,16 @@ fn test_with_env_vars() {
 # 1. Format check (required by CI)
 cargo fmt --check
 
-# 2. Run all tests
+# 2. Clippy linting (required by CI)
+cargo clippy -- -D warnings
+
+# 3. Run all tests
 cargo test
 
-# 3. Build release version
+# 4. Build release version
 cargo build --release
 
-# 4. (Optional) Run with debug logging to verify functionality
+# 5. (Optional) Run with debug logging to verify functionality
 RUST_LOG=debug cargo run
 ```
 
@@ -150,6 +153,7 @@ make clean         # Clean data directories
 The GitHub Actions workflow runs on every push and checks:
 1. Code builds successfully (`cargo build`)
 2. Code formatting is correct (`cargo fmt --check`)
-3. All tests pass (`cargo test`)
+3. No clippy warnings (`cargo clippy -- -D warnings`)
+4. All tests pass (`cargo test`)
 
 Ensure your changes pass all these checks locally before pushing.

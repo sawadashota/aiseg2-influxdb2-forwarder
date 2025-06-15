@@ -2,22 +2,42 @@ use anyhow::{anyhow, Result};
 use serde_derive::Deserialize;
 use std::str::FromStr;
 
+/// Provides the default log level when not specified in environment.
+/// 
+/// Returns "info" as the default logging level.
 fn default_log_level() -> String {
     "info".to_string()
 }
 
+/// Application-wide configuration settings.
+/// 
+/// Controls general application behavior such as logging level.
+/// Loaded from environment variables without prefix.
 #[derive(Deserialize, Debug)]
 pub struct AppConfig {
+    /// Logging level (trace, debug, info, warn, error)
+    /// Defaults to "info" if not specified
     #[serde(default = "default_log_level")]
     pub log_level: String,
 }
 
 impl AppConfig {
+    /// Converts the string log level to a tracing::Level enum.
+    /// 
+    /// Falls back to INFO level if the string cannot be parsed.
     pub fn log_level(&self) -> tracing::Level {
         tracing::Level::from_str(self.log_level.as_str()).unwrap_or(tracing::Level::INFO)
     }
 }
 
+/// Loads application configuration from environment variables.
+/// 
+/// Reads environment variables:
+/// - `LOG_LEVEL`: Sets the logging level (default: "info")
+/// 
+/// # Returns
+/// - `Ok(AppConfig)` if configuration loads successfully
+/// - `Err` if required environment variables are missing or invalid
 pub(crate) fn load_app_config() -> Result<AppConfig> {
     match envy::from_env::<AppConfig>() {
         Ok(config) => Ok(config),
@@ -25,29 +45,55 @@ pub(crate) fn load_app_config() -> Result<AppConfig> {
     }
 }
 
+/// Default interval for collecting real-time status metrics (5 seconds).
 fn default_status_interval_sec() -> u64 {
     5
 }
 
+/// Default interval for collecting daily total metrics (60 seconds).
 fn default_total_interval_sec() -> u64 {
     60
 }
 
+/// Default number of days to collect historical data on startup (30 days).
 fn default_total_initial_days() -> u64 {
     30
 }
 
+/// Configuration for metric collection intervals and behavior.
+/// 
+/// Controls how frequently different types of metrics are collected
+/// from the AiSEG2 system. Loaded from environment variables with
+/// COLLECTOR_ prefix.
 #[derive(Deserialize, Debug)]
 pub struct CollectorConfig {
+    /// Interval for collecting real-time status metrics (power, climate)
+    /// Default: 5 seconds
     #[serde(default = "default_status_interval_sec")]
     pub status_interval_sec: u64,
+    
+    /// Interval for collecting daily total metrics
+    /// Default: 60 seconds
     #[serde(default = "default_total_interval_sec")]
     pub total_interval_sec: u64,
-    // how many days to collect total metrics at initial
+    
+    /// Number of past days to collect when starting up
+    /// Used to backfill historical data on first run
+    /// Default: 30 days
     #[serde(default = "default_total_initial_days")]
     pub total_initial_days: u64,
 }
 
+/// Loads collector configuration from environment variables.
+/// 
+/// Reads environment variables with COLLECTOR_ prefix:
+/// - `COLLECTOR_STATUS_INTERVAL_SEC`: Interval for status metrics (default: 5)
+/// - `COLLECTOR_TOTAL_INTERVAL_SEC`: Interval for total metrics (default: 60)
+/// - `COLLECTOR_TOTAL_INITIAL_DAYS`: Days of history to collect (default: 30)
+/// 
+/// # Returns
+/// - `Ok(CollectorConfig)` with loaded or default values
+/// - `Err` if environment variables contain invalid values
 pub fn load_collector_config() -> Result<CollectorConfig> {
     match envy::prefixed("COLLECTOR_").from_env::<CollectorConfig>() {
         Ok(config) => Ok(config),
@@ -55,13 +101,31 @@ pub fn load_collector_config() -> Result<CollectorConfig> {
     }
 }
 
+/// Configuration for connecting to the AiSEG2 system.
+/// 
+/// Contains credentials and connection details for the
+/// Panasonic AiSEG2 energy monitoring system.
+/// Loaded from environment variables with AISEG2_ prefix.
 #[derive(Deserialize, Debug)]
 pub struct Aiseg2Config {
+    /// Base URL of the AiSEG2 system (e.g., "http://192.168.1.100")
     pub url: String,
+    /// Username for AiSEG2 authentication
     pub user: String,
+    /// Password for AiSEG2 authentication
     pub password: String,
 }
 
+/// Loads AiSEG2 configuration from environment variables.
+/// 
+/// Reads required environment variables with AISEG2_ prefix:
+/// - `AISEG2_URL`: The base URL of the AiSEG2 system
+/// - `AISEG2_USER`: Username for authentication
+/// - `AISEG2_PASSWORD`: Password for authentication
+/// 
+/// # Returns
+/// - `Ok(Aiseg2Config)` if all required variables are present
+/// - `Err` if any required variables are missing
 pub(crate) fn load_aiseg_config() -> Result<Aiseg2Config> {
     match envy::prefixed("AISEG2_").from_env::<Aiseg2Config>() {
         Ok(config) => Ok(config),
@@ -69,14 +133,34 @@ pub(crate) fn load_aiseg_config() -> Result<Aiseg2Config> {
     }
 }
 
+/// Configuration for connecting to InfluxDB 2.x.
+/// 
+/// Contains all necessary parameters for establishing
+/// a connection to InfluxDB and writing metrics.
+/// Loaded from environment variables with INFLUXDB_ prefix.
 #[derive(Deserialize, Debug)]
 pub struct InfluxConfig {
+    /// InfluxDB server URL (e.g., "http://localhost:8086")
     pub url: String,
+    /// Authentication token with write permissions
     pub token: String,
+    /// InfluxDB organization name
     pub org: String,
+    /// Target bucket for storing metrics
     pub bucket: String,
 }
 
+/// Loads InfluxDB configuration from environment variables.
+/// 
+/// Reads required environment variables with INFLUXDB_ prefix:
+/// - `INFLUXDB_URL`: The InfluxDB server URL
+/// - `INFLUXDB_TOKEN`: Authentication token
+/// - `INFLUXDB_ORG`: Organization name
+/// - `INFLUXDB_BUCKET`: Target bucket name
+/// 
+/// # Returns
+/// - `Ok(InfluxConfig)` if all required variables are present
+/// - `Err` if any required variables are missing
 pub fn load_influx_config() -> Result<InfluxConfig> {
     match envy::prefixed("INFLUXDB_").from_env::<InfluxConfig>() {
         Ok(config) => Ok(config),

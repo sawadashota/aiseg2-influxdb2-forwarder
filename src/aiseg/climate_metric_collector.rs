@@ -203,23 +203,20 @@ fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result
     const EXPECTED_DIGITS: usize = 3;
 
     // Initialize with default values for XX.X format
-    let mut digits = vec!['0', '0', '0']; // [tens, ones, tenths]
-    let mut processed_count = 0;
+    let mut digits = ['0', '0', '0']; // [tens, ones, tenths]
 
     // Process up to 3 elements
-    for element in elements.take(EXPECTED_DIGITS) {
+    for (processed_count, element) in elements.take(EXPECTED_DIGITS).enumerate() {
         // Extract class attribute
         let class_value = element.attr("class").context("Failed to get class")?;
 
         // Extract the first numeric character from the class
         let digit = class_value
             .chars()
-            .filter(|c| c.is_numeric())
-            .next()
+            .find(|c| c.is_numeric())
             .context("No numeric character found in class")?;
 
         digits[processed_count] = digit;
-        processed_count += 1;
     }
 
     // Build the decimal number string: "XX.X"

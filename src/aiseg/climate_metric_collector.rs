@@ -37,7 +37,7 @@ impl MetricCollector for ClimateMetricCollector {
                 let document = Html::parse_document(&response);
 
                 for i in 1..=3 {
-                    let base_id = format!("#base{}_1", i);
+                    let base_id = format!("#base{:02}_1", i);
                     let metrics = match parse(&document, &base_id, timestamp) {
                         Ok(metrics) => metrics,
                         Err(_) => break 'root,
@@ -81,13 +81,13 @@ fn parse(
         .next()
         .context("Failed to find num_wrapper")?;
 
-    // extract temperature from `#num_ond_\d`
-    let temperature_selector = html_selector(r#"[id^="num_ond_"]"#)?;
+    // extract temperature from `#num_ond_XX_Y` where XX is base number and Y is 1,2,3
+    let temperature_selector = html_selector(r#"[id^="num_ond_"][class*="num no"]"#)?;
     let temperature =
         extract_num_from_html_class(num_wrapper_element.select(&temperature_selector))?;
 
-    // extract humidity from `#num_shitudo_\d`
-    let humidity_selector = html_selector(r#"[id^="num_shitudo_"]"#)?;
+    // extract humidity from `#num_shitudo_XX_Y` where XX is base number and Y is 1,2,3
+    let humidity_selector = html_selector(r#"[id^="num_shitudo_"][class*="num no"]"#)?;
     let humidity = extract_num_from_html_class(num_wrapper_element.select(&humidity_selector))?;
 
     Ok([
@@ -150,39 +150,52 @@ mod tests {
         let mut html = r#"<!DOCTYPE html><html><body>"#.to_string();
 
         for (i, (name, temp, humidity)) in items.iter().enumerate() {
-            let base_id = i + 1;
+            let base_id = format!("{:02}", i + 1); // Format as "01", "02", etc.
+            
+            // Extract temperature digits (format: XX.X)
+            let temp_digit1 = temp.chars().next().unwrap_or('0');
+            let temp_digit2 = temp.chars().nth(1).unwrap_or('0');
+            let temp_digit3 = temp.chars().nth(3).unwrap_or('0'); // Skip decimal point at position 2
+            
+            // Extract humidity digits (format: XX.X)
+            let hum_digit1 = humidity.chars().next().unwrap_or('0');
+            let hum_digit2 = humidity.chars().nth(1).unwrap_or('0');
+            let hum_digit3 = humidity.chars().nth(3).unwrap_or('0'); // Skip decimal point at position 2
+            
             html.push_str(&format!(
                 r#"<div id="base{}_1">
                     <div class="txt_name">{}</div>
                     <div class="num_wrapper">
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_ond_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
-                        <div id="num_shitudo_{}" class="num{}"></div>
+                        <div class="num_ond" style="visibility:visible">
+                            <div class="icon_ond"></div>
+                            <div id="num_ond_{}_1" class="num no{}"></div>
+                            <div id="num_ond_{}_2" class="num no{}"></div>
+                            <div id="num_dot_place1" class="num_dot"></div>
+                            <div id="num_ond_{}_3" class="num no{}"></div>
+                            <div id="num_ond_{}_4" class="num no0" style="display:none"></div>
+                            <div class="num_tani"></div>
+                        </div>
+                        <div class="num_shitudo" style="visibility:visible">
+                            <div class="icon_shitudo"></div>
+                            <div id="num_shitudo_{}_1" class="num no{}"></div>
+                            <div id="num_shitudo_{}_2" class="num no{}"></div>
+                            <div id="num_dot_place2" class="num_dot"></div>
+                            <div id="num_shitudo_{}_3" class="num no{}"></div>
+                            <div id="num_shitudo_{}_4" class="num no0" style="display:none"></div>
+                            <div class="num_tani"></div>
+                        </div>
                     </div>
                 </div>"#,
                 base_id,
                 name,
-                base_id,
-                temp.chars().next().unwrap_or('0'),
-                base_id,
-                temp.chars().nth(1).unwrap_or('0'),
-                base_id,
-                temp.chars().nth(3).unwrap_or('0'),
-                base_id,
-                temp.chars().nth(4).unwrap_or('0'),
-                base_id,
-                humidity.chars().next().unwrap_or('0'),
-                base_id,
-                humidity.chars().nth(1).unwrap_or('0'),
-                base_id,
-                humidity.chars().nth(3).unwrap_or('0'),
-                base_id,
-                humidity.chars().nth(4).unwrap_or('0'),
+                base_id, temp_digit1,
+                base_id, temp_digit2,
+                base_id, temp_digit3,
+                base_id, // for _4 temperature element
+                base_id, hum_digit1,
+                base_id, hum_digit2,
+                base_id, hum_digit3,
+                base_id, // for _4 humidity element
             ));
         }
 
@@ -195,11 +208,11 @@ mod tests {
 
         #[test]
         fn test_parse_single_base_element() {
-            let html = create_climate_html(vec![("Living Room", "23.50", "45.60")]);
+            let html = create_climate_html(vec![("Living Room", "23.5", "45.6")]);
             let document = Html::parse_document(&html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp);
+            let result = parse(&document, "#base01_1", timestamp);
 
             assert!(result.is_ok());
             let metrics = result.unwrap();
@@ -402,7 +415,7 @@ mod tests {
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp);
+            let result = parse(&document, "#base01_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())
@@ -416,7 +429,7 @@ mod tests {
         #[test]
         fn test_parse_missing_name_element() {
             let html = r#"
-                <div id="base1_1">
+                <div id="base01_1">
                     <div class="num_wrapper">
                         <div id="num_ond_1" class="num2"></div>
                     </div>
@@ -425,7 +438,7 @@ mod tests {
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp);
+            let result = parse(&document, "#base01_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())
@@ -439,14 +452,14 @@ mod tests {
         #[test]
         fn test_parse_missing_num_wrapper() {
             let html = r#"
-                <div id="base1_1">
+                <div id="base01_1">
                     <div class="txt_name">Room</div>
                 </div>
             "#;
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp);
+            let result = parse(&document, "#base01_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())
@@ -473,7 +486,7 @@ mod tests {
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp);
+            let result = parse(&document, "#base01_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())
@@ -496,7 +509,7 @@ mod tests {
             let document = Html::parse_document(html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp);
+            let result = parse(&document, "#base01_1", timestamp);
 
             if let Ok(metrics) = &result {
                 panic!("Expected error but got {} metrics", metrics.len())

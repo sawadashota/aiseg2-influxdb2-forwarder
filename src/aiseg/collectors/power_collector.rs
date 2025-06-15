@@ -1,0 +1,138 @@
+//! Power metric collector implementation.
+
+use anyhow::Result;
+use chrono::{DateTime, Local};
+use scraper::Html;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use crate::aiseg::client::Client;
+use crate::aiseg::collector_base::{CollectorBase, MetricResult};
+use crate::aiseg::metrics::power::{
+    create_consumption_metrics, create_generation_metrics, create_total_power_metrics,
+    merge_power_breakdown_metrics,
+};
+use crate::aiseg::parsers::power_parser::{
+    has_duplicate_device_names, parse_consumption_page, parse_generation_sources, parse_total_power,
+};
+use crate::model::{DataPointBuilder, MetricCollector};
+
+/// Collector for real-time power metrics from AiSEG2.
+///
+/// Fetches instantaneous power generation and consumption data,
+/// including both summary totals and detailed breakdowns.
+pub struct PowerMetricCollector {
+    client: Arc<Client>,
+}
+
+impl PowerMetricCollector {
+    /// Creates a new PowerMetricCollector instance.
+    pub fn new(client: Arc<Client>) -> Self {
+        Self { client }
+    }
+
+    /// Collects metrics from the main electricity flow page.
+    async fn collect_from_main_page(&self) -> MetricResult {
+        let response = self.fetch_page("/page/electricflow/111").await?;
+        let document = Html::parse_document(&response);
+
+        let mut metrics = Vec::new();
+
+        // Parse and create total metrics
+        let (gen_kw, cons_kw) = parse_total_power(&document)?;
+        metrics.extend(create_total_power_metrics(gen_kw, cons_kw));
+
+        // Parse and create generation breakdown
+        let sources = parse_generation_sources(&document)?;
+        metrics.extend(create_generation_metrics(sources));
+
+        Ok(metrics)
+    }
+
+    /// Collects consumption metrics from paginated detail pages.
+    async fn collect_consumption_metrics(&self) -> MetricResult {
+        let mut all_items = Vec::new();
+        let mut last_page_items = Vec::new();
+
+        for page in 1..=20 {
+            let response = self
+                .fetch_page(&format!("/page/electricflow/1113?id={}", page))
+                .await?;
+            let document = Html::parse_document(&response);
+
+            let page_items = parse_consumption_page(&document)?;
+
+            // Check for duplicate names indicating end of pagination
+            if has_duplicate_device_names(&last_page_items, &page_items) {
+                break;
+            }
+
+            if page_items.is_empty() {
+                break;
+            }
+
+            last_page_items = page_items.clone();
+            all_items.extend(page_items);
+        }
+
+        // Merge duplicates and convert to metrics
+        let merged = merge_power_breakdown_metrics(all_items);
+        let devices: Vec<(String, f64)> = merged
+            .into_iter()
+            .map(|m| (m.name.trim_end_matches("(W)").to_string(), m.value as f64))
+            .collect();
+
+        Ok(create_consumption_metrics(devices))
+    }
+}
+
+impl CollectorBase for PowerMetricCollector {
+    fn client(&self) -> &Arc<Client> {
+        &self.client
+    }
+}
+
+impl MetricCollector for PowerMetricCollector {
+    fn collect<'a>(
+        &'a self,
+        _timestamp: DateTime<Local>,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut all_metrics = Vec::new();
+
+            // Collect from main page
+            all_metrics.extend(self.collect_from_main_page().await?);
+
+            // Collect consumption details
+            all_metrics.extend(self.collect_consumption_metrics().await?);
+
+            Ok(all_metrics)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Aiseg2Config;
+
+    fn test_config(url: String) -> Aiseg2Config {
+        Aiseg2Config {
+            url,
+            user: "test".to_string(),
+            password: "test".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_power_collector_creation() {
+        let config = test_config("http://localhost".to_string());
+        let client = Arc::new(Client::new(config));
+        let collector = PowerMetricCollector::new(client);
+
+        // Verify collector is created
+        assert!(!collector.client().base_url().is_empty());
+    }
+}
+

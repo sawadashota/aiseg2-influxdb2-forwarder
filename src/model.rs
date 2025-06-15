@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local};
 use futures::future::join_all;
 use influxdb2::models::DataPoint;
-use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -80,7 +79,7 @@ impl DataPointBuilder for PowerStatusMetric {
 /// Used for component-level power metrics that show individual
 /// sources of generation or consumption (e.g., solar panels,
 /// specific appliances).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PowerStatusBreakdownMetric {
     /// The measurement type (should be Measurement::Power)
     pub measurement: Measurement,
@@ -96,53 +95,12 @@ pub struct PowerStatusBreakdownMetric {
 ///
 /// Distinguishes between power generation sources and
 /// power consumption endpoints.
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum PowerStatusBreakdownMetricCategory {
     /// Power generation sources (solar, fuel cell, etc.)
     Generation,
     /// Power consumption endpoints (appliances, circuits, etc.)
     Consumption,
-}
-
-/// Merges power breakdown metrics with identical keys.
-///
-/// When multiple metrics have the same measurement, category, and name,
-/// this function sums their values. This is useful when the same device
-/// appears multiple times in paginated results.
-///
-/// # Arguments
-/// * `metrics` - Vector of power breakdown metrics to merge
-///
-/// # Returns
-/// A vector with merged metrics where duplicates have been summed
-pub fn merge_same_name_power_status_breakdown_metrics(
-    metrics: Vec<PowerStatusBreakdownMetric>,
-) -> Vec<PowerStatusBreakdownMetric> {
-    #[derive(Eq, Hash, PartialEq)]
-    struct Key {
-        measurement: Measurement,
-        category: PowerStatusBreakdownMetricCategory,
-        name: String,
-    }
-
-    let mut map = HashMap::<Key, i64>::new();
-    for metric in metrics {
-        let key = Key {
-            measurement: metric.measurement,
-            category: metric.category,
-            name: metric.name.clone(),
-        };
-        let entry = map.entry(key).or_insert(0);
-        *entry += metric.value;
-    }
-    map.into_iter()
-        .map(|(key, value)| PowerStatusBreakdownMetric {
-            measurement: key.measurement,
-            category: key.category,
-            name: key.name,
-            value,
-        })
-        .collect()
 }
 
 impl fmt::Display for PowerStatusBreakdownMetricCategory {
@@ -225,7 +183,7 @@ pub struct ClimateStatusMetric {
 ///
 /// Distinguishes between different types of environmental
 /// measurements from climate sensors.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ClimateStatusMetricCategory {
     /// Temperature in degrees Celsius
     Temperature,
@@ -499,124 +457,6 @@ mod tests {
             let result = metric.to_point();
             assert!(result.is_ok());
             // DataPoint is successfully created
-        }
-
-        #[test]
-        fn test_merge_same_name_power_status_breakdown_metrics_empty() {
-            let metrics = vec![];
-            let result = merge_same_name_power_status_breakdown_metrics(metrics);
-            assert_eq!(result.len(), 0);
-        }
-
-        #[test]
-        fn test_merge_same_name_power_status_breakdown_metrics_single() {
-            let metrics = vec![PowerStatusBreakdownMetric {
-                measurement: Measurement::Power,
-                category: PowerStatusBreakdownMetricCategory::Generation,
-                name: "solar".to_string(),
-                value: 100,
-            }];
-
-            let result = merge_same_name_power_status_breakdown_metrics(metrics);
-            assert_eq!(result.len(), 1);
-            assert_eq!(result[0].value, 100);
-            assert_eq!(result[0].name, "solar");
-        }
-
-        #[test]
-        fn test_merge_same_name_power_status_breakdown_metrics_same_key() {
-            let metrics = vec![
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Generation,
-                    name: "solar".to_string(),
-                    value: 100,
-                },
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Generation,
-                    name: "solar".to_string(),
-                    value: 200,
-                },
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Generation,
-                    name: "solar".to_string(),
-                    value: 50,
-                },
-            ];
-
-            let result = merge_same_name_power_status_breakdown_metrics(metrics);
-            assert_eq!(result.len(), 1);
-            assert_eq!(result[0].value, 350); // 100 + 200 + 50
-            assert_eq!(result[0].name, "solar");
-        }
-
-        #[test]
-        fn test_merge_same_name_power_status_breakdown_metrics_different_keys() {
-            let metrics = vec![
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Generation,
-                    name: "solar".to_string(),
-                    value: 100,
-                },
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Consumption,
-                    name: "solar".to_string(), // Same name but different category
-                    value: 50,
-                },
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Generation,
-                    name: "wind".to_string(), // Different name
-                    value: 200,
-                },
-            ];
-
-            let result = merge_same_name_power_status_breakdown_metrics(metrics);
-            assert_eq!(result.len(), 3); // No merging should occur
-        }
-
-        #[test]
-        fn test_merge_same_name_power_status_breakdown_metrics_mixed() {
-            let metrics = vec![
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Generation,
-                    name: "solar".to_string(),
-                    value: 100,
-                },
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Generation,
-                    name: "solar".to_string(),
-                    value: 150,
-                },
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Consumption,
-                    name: "appliances".to_string(),
-                    value: 300,
-                },
-                PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Consumption,
-                    name: "appliances".to_string(),
-                    value: 200,
-                },
-            ];
-
-            let result = merge_same_name_power_status_breakdown_metrics(metrics);
-            assert_eq!(result.len(), 2);
-
-            // Find the merged results
-            let solar_result = result.iter().find(|m| m.name == "solar").unwrap();
-            assert_eq!(solar_result.value, 250); // 100 + 150
-
-            let appliances_result = result.iter().find(|m| m.name == "appliances").unwrap();
-            assert_eq!(appliances_result.value, 500); // 300 + 200
         }
 
         #[tokio::test]

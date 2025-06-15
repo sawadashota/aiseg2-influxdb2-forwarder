@@ -130,7 +130,11 @@ impl DataPointBuilder for PowerTotalMetric {
         match DataPoint::builder(self.measurement.to_string().as_str())
             .tag("detail-section", self.name.clone())
             .field("value", self.value)
-            .timestamp(self.date.timestamp_nanos_opt().unwrap())
+            .timestamp(
+                self.date
+                    .timestamp_nanos_opt()
+                    .ok_or_else(|| anyhow!("Timestamp overflow"))?,
+            )
             .build()
         {
             Ok(point) => Ok(point),
@@ -169,7 +173,11 @@ impl DataPointBuilder for ClimateStatusMetric {
             .tag("detail-type", self.category.to_string())
             .tag("detail-section", self.name.clone())
             .field("value", self.value)
-            .timestamp(self.timestamp.timestamp_nanos_opt().unwrap())
+            .timestamp(
+                self.timestamp
+                    .timestamp_nanos_opt()
+                    .ok_or_else(|| anyhow!("Timestamp overflow"))?,
+            )
             .build()
         {
             Ok(point) => Ok(point),

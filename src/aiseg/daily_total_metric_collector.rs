@@ -94,17 +94,8 @@ fn make_query(date: DateTime<Local>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
+    use crate::aiseg::test_utils::test_config;
     use chrono::TimeZone;
-    use mockito;
-
-    fn test_config(url: String) -> config::Aiseg2Config {
-        config::Aiseg2Config {
-            url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        }
-    }
 
     fn create_html_response(title: &str, value: &str) -> String {
         format!(

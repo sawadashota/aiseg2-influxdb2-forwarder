@@ -47,19 +47,11 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito;
-
-    fn test_config() -> config::Aiseg2Config {
-        config::Aiseg2Config {
-            url: "http://test.local".to_string(),
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        }
-    }
+    use crate::aiseg::test_utils::test_config;
 
     #[test]
     fn test_client_new() {
-        let config = test_config();
+        let config = test_config("http://test.local".to_string());
         let client = Client::new(config);
 
         assert_eq!(client.config.url, "http://test.local");
@@ -80,11 +72,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/test/path").await;
@@ -106,11 +94,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/not/found").await;
@@ -136,11 +120,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/error").await;
@@ -166,11 +146,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/api/data").await;
@@ -201,11 +177,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = config::Aiseg2Config {
-            url: mock_url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/page/electricflow/111").await;
@@ -220,11 +192,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_connection_error() {
         // Use a non-existent server URL
-        let config = config::Aiseg2Config {
-            url: "http://non-existent-server.local:12345".to_string(),
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        };
+        let config = test_config("http://non-existent-server.local:12345".to_string());
 
         let client = Client::new(config);
         let result = client.get("/test").await;

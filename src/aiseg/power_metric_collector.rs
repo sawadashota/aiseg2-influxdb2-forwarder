@@ -1,6 +1,6 @@
 use crate::aiseg::client::Client;
 use crate::aiseg::helper::{
-    f64_kw_to_i64_watt, f64_to_i64, parse_f64_from_html, parse_text_from_html,
+    kilowatts_to_watts, parse_f64_from_html, parse_text_from_html, truncate_to_i64,
 };
 use crate::model::{
     merge_same_name_power_status_breakdown_metrics, DataPointBuilder, Measurement, MetricCollector,
@@ -35,8 +35,8 @@ impl PowerMetricCollector {
     }
 
     fn collect_total_metrics(&self, document: &Html) -> Result<Vec<Box<dyn DataPointBuilder>>> {
-        let generation = f64_kw_to_i64_watt(parse_f64_from_html(document, "#g_capacity")?);
-        let consumption = f64_kw_to_i64_watt(parse_f64_from_html(document, "#u_capacity")?);
+        let generation = kilowatts_to_watts(parse_f64_from_html(document, "#g_capacity")?);
+        let consumption = kilowatts_to_watts(parse_f64_from_html(document, "#u_capacity")?);
 
         Ok(vec![
             Box::new(PowerStatusMetric {
@@ -67,7 +67,7 @@ impl PowerMetricCollector {
                 Ok(name) => name,
                 Err(_) => break,
             };
-            let value = f64_to_i64(parse_f64_from_html(
+            let value = truncate_to_i64(parse_f64_from_html(
                 document,
                 &format!("#g_d_{}_capacity", i),
             )?);
@@ -88,8 +88,21 @@ impl PowerMetricCollector {
     }
 
     async fn collect_consumption_detail_metrics(&self) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+        let mut all_items: Vec<PowerStatusBreakdownMetric> = vec![];
+
+        let items = self.collect_consumption_pages().await?;
+        all_items.extend(items);
+
+        let merged = merge_same_name_power_status_breakdown_metrics(all_items);
+        Ok(merged
+            .into_iter()
+            .map(|item| Box::new(item) as Box<dyn DataPointBuilder>)
+            .collect())
+    }
+
+    async fn collect_consumption_pages(&self) -> Result<Vec<PowerStatusBreakdownMetric>> {
         let mut last_page_names = "".to_string();
-        let mut list: Vec<PowerStatusBreakdownMetric> = vec![];
+        let mut all_items: Vec<PowerStatusBreakdownMetric> = vec![];
 
         for page in 1..=20 {
             let response = self
@@ -98,29 +111,10 @@ impl PowerMetricCollector {
                 .await?;
             let document = Html::parse_document(&response);
 
-            let mut items: Vec<PowerStatusBreakdownMetric> = vec![];
-            for i in 1..=10 {
-                let name = match parse_text_from_html(
-                    &document,
-                    &format!("#stage_{} > div.c_device", i),
-                ) {
-                    Ok(name) => name,
-                    Err(_) => break,
-                };
-                let watt =
-                    match parse_f64_from_html(&document, &format!("#stage_{} > div.c_value", i)) {
-                        Ok(kw) => f64_to_i64(kw),
-                        Err(_) => 0,
-                    };
-                items.push(PowerStatusBreakdownMetric {
-                    measurement: Measurement::Power,
-                    category: PowerStatusBreakdownMetricCategory::Consumption,
-                    name: format!("{}({})", name, Unit::Watt),
-                    value: watt,
-                });
-            }
+            let page_items = self.parse_consumption_page(&document)?;
 
-            let names = items
+            // Check if we've seen these names before (pagination complete)
+            let names = page_items
                 .iter()
                 .map(|item| item.name.clone())
                 .collect::<Vec<String>>()
@@ -129,14 +123,34 @@ impl PowerMetricCollector {
                 break;
             }
             last_page_names = names;
-            list.extend(items);
+            all_items.extend(page_items);
         }
 
-        let merged = merge_same_name_power_status_breakdown_metrics(list);
-        Ok(merged
-            .into_iter()
-            .map(|item| Box::new(item) as Box<dyn DataPointBuilder>)
-            .collect())
+        Ok(all_items)
+    }
+
+    fn parse_consumption_page(&self, document: &Html) -> Result<Vec<PowerStatusBreakdownMetric>> {
+        let mut items: Vec<PowerStatusBreakdownMetric> = vec![];
+
+        for i in 1..=10 {
+            let name = match parse_text_from_html(document, &format!("#stage_{} > div.c_device", i))
+            {
+                Ok(name) => name,
+                Err(_) => break,
+            };
+            let watt = match parse_f64_from_html(document, &format!("#stage_{} > div.c_value", i)) {
+                Ok(kw) => truncate_to_i64(kw),
+                Err(_) => 0,
+            };
+            items.push(PowerStatusBreakdownMetric {
+                measurement: Measurement::Power,
+                category: PowerStatusBreakdownMetricCategory::Consumption,
+                name: format!("{}({})", name, Unit::Watt),
+                value: watt,
+            });
+        }
+
+        Ok(items)
     }
 }
 
@@ -160,16 +174,7 @@ impl MetricCollector for PowerMetricCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
-    use mockito;
-
-    fn test_config(url: String) -> config::Aiseg2Config {
-        config::Aiseg2Config {
-            url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        }
-    }
+    use crate::aiseg::test_utils::test_config;
 
     fn create_main_page_html(
         g_capacity: &str,
@@ -676,7 +681,7 @@ mod tests {
 
             assert!(result.is_ok());
             let metrics = result.unwrap();
-            assert!(metrics.len() > 0);
+            assert!(!metrics.is_empty());
         }
     }
 
@@ -686,7 +691,7 @@ mod tests {
         #[test]
         fn test_collect_total_metrics_missing_g_capacity() {
             let html = r#"<html><body><div id="u_capacity">3.8</div></body></html>"#;
-            let document = Html::parse_document(&html);
+            let document = Html::parse_document(html);
             let collector = PowerMetricCollector::new(Arc::new(Client::new(test_config(
                 "http://test".to_string(),
             ))));
@@ -703,7 +708,7 @@ mod tests {
         #[test]
         fn test_collect_total_metrics_missing_u_capacity() {
             let html = r#"<html><body><div id="g_capacity">2.5</div></body></html>"#;
-            let document = Html::parse_document(&html);
+            let document = Html::parse_document(html);
             let collector = PowerMetricCollector::new(Arc::new(Client::new(test_config(
                 "http://test".to_string(),
             ))));
@@ -723,7 +728,7 @@ mod tests {
                 <div id="g_capacity">invalid</div>
                 <div id="u_capacity">3.8</div>
             </body></html>"#;
-            let document = Html::parse_document(&html);
+            let document = Html::parse_document(html);
             let collector = PowerMetricCollector::new(Arc::new(Client::new(test_config(
                 "http://test".to_string(),
             ))));

@@ -2,6 +2,11 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local, NaiveTime};
 use scraper::{Html, Selector};
 
+/// Parses text content from an HTML element.
+///
+/// Returns an error if:
+/// - The selector doesn't match any elements
+/// - The matched element has no children (which implies no text content)
 pub fn parse_text_from_html(document: &Html, selector: &str) -> Result<String> {
     let selector = html_selector(selector)?;
     let element = document
@@ -37,15 +42,18 @@ pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64> {
 }
 
 pub fn day_of_beginning(date: &DateTime<Local>) -> DateTime<Local> {
+    // SAFETY: with_time only fails if the resulting DateTime would be out of range.
+    // Since we're setting to midnight (00:00:00) using NaiveTime::default(),
+    // this is safe for all valid input dates - the operation can't cause overflow.
     date.with_time(NaiveTime::default()).unwrap()
 }
 
-pub fn f64_to_i64(kw: f64) -> i64 {
-    kw.trunc() as i64
+pub fn truncate_to_i64(value: f64) -> i64 {
+    value.trunc() as i64
 }
 
-pub fn f64_kw_to_i64_watt(kw: f64) -> i64 {
-    f64_to_i64(kw * 1000.0)
+pub fn kilowatts_to_watts(kw: f64) -> i64 {
+    truncate_to_i64(kw * 1000.0)
 }
 
 #[cfg(test)]
@@ -185,48 +193,48 @@ mod tests {
         }
 
         #[test]
-        fn test_f64_to_i64_positive() {
-            assert_eq!(f64_to_i64(123.45), 123);
-            assert_eq!(f64_to_i64(123.99), 123);
-            assert_eq!(f64_to_i64(123.0), 123);
+        fn test_truncate_to_i64_positive() {
+            assert_eq!(truncate_to_i64(123.45), 123);
+            assert_eq!(truncate_to_i64(123.99), 123);
+            assert_eq!(truncate_to_i64(123.0), 123);
         }
 
         #[test]
-        fn test_f64_to_i64_negative() {
-            assert_eq!(f64_to_i64(-123.45), -123);
-            assert_eq!(f64_to_i64(-123.99), -123);
-            assert_eq!(f64_to_i64(-123.0), -123);
+        fn test_truncate_to_i64_negative() {
+            assert_eq!(truncate_to_i64(-123.45), -123);
+            assert_eq!(truncate_to_i64(-123.99), -123);
+            assert_eq!(truncate_to_i64(-123.0), -123);
         }
 
         #[test]
-        fn test_f64_to_i64_zero() {
-            assert_eq!(f64_to_i64(0.0), 0);
-            assert_eq!(f64_to_i64(0.9), 0);
-            assert_eq!(f64_to_i64(-0.9), 0);
+        fn test_truncate_to_i64_zero() {
+            assert_eq!(truncate_to_i64(0.0), 0);
+            assert_eq!(truncate_to_i64(0.9), 0);
+            assert_eq!(truncate_to_i64(-0.9), 0);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_positive() {
-            assert_eq!(f64_kw_to_i64_watt(1.5), 1500);
-            assert_eq!(f64_kw_to_i64_watt(2.345), 2345);
-            assert_eq!(f64_kw_to_i64_watt(0.5), 500);
+        fn test_kilowatts_to_watts_positive() {
+            assert_eq!(kilowatts_to_watts(1.5), 1500);
+            assert_eq!(kilowatts_to_watts(2.345), 2345);
+            assert_eq!(kilowatts_to_watts(0.5), 500);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_negative() {
-            assert_eq!(f64_kw_to_i64_watt(-1.5), -1500);
-            assert_eq!(f64_kw_to_i64_watt(-2.345), -2345);
+        fn test_kilowatts_to_watts_negative() {
+            assert_eq!(kilowatts_to_watts(-1.5), -1500);
+            assert_eq!(kilowatts_to_watts(-2.345), -2345);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_zero() {
-            assert_eq!(f64_kw_to_i64_watt(0.0), 0);
+        fn test_kilowatts_to_watts_zero() {
+            assert_eq!(kilowatts_to_watts(0.0), 0);
         }
 
         #[test]
-        fn test_f64_kw_to_i64_watt_small_values() {
-            assert_eq!(f64_kw_to_i64_watt(0.001), 1);
-            assert_eq!(f64_kw_to_i64_watt(0.0001), 0);
+        fn test_kilowatts_to_watts_small_values() {
+            assert_eq!(kilowatts_to_watts(0.001), 1);
+            assert_eq!(kilowatts_to_watts(0.0001), 0);
         }
     }
 

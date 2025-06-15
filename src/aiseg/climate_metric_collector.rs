@@ -4,7 +4,7 @@ use crate::model::{
     ClimateStatusMetric, ClimateStatusMetricCategory, DataPointBuilder, Measurement,
     MetricCollector,
 };
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local};
 use scraper::Html;
 use std::future::Future;
@@ -109,50 +109,31 @@ fn parse(
 }
 
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
-    let mut chars: [char; 4] = ['0', '0', '.', '0'];
-    let mut i = 0;
-    let mut element_count = 0;
+    let digits: String = elements
+        .take(4)
+        .map(|element| {
+            element
+                .attr("class")
+                .and_then(|class| class.chars().find(|c| c.is_numeric()))
+                .ok_or_else(|| anyhow!("Failed to extract digit from class"))
+        })
+        .collect::<Result<Vec<char>>>()?
+        .into_iter()
+        .collect();
 
-    for element in elements {
-        element_count += 1;
-        if i == 2 {
-            i += 1; // skip dot
-        }
-        if i >= 4 {
-            break; // We have all 4 digits
-        }
-        let class_value = element.attr("class").context("Failed to get class")?;
-        chars[i] = class_value
-            .chars()
-            .filter(|c| c.is_numeric())
-            .collect::<String>()
-            .parse::<char>()
-            .context("Failed to parse value")?;
-        i += 1;
+    if digits.len() != 4 {
+        return Err(anyhow!("Expected 4 digits but found {}", digits.len()));
     }
 
-    if element_count != 4 {
-        return Err(anyhow::anyhow!(
-            "Expected 4 elements but found {}",
-            element_count
-        ));
-    }
-
-    Ok(chars.iter().collect::<String>().parse::<f64>()?)
+    // Insert decimal point after first two digits: "1234" -> "12.34"
+    let number_str = format!("{}.{}", &digits[..2], &digits[2..]);
+    number_str.parse::<f64>().context("Failed to parse value")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
-
-    fn test_config(url: String) -> config::Aiseg2Config {
-        config::Aiseg2Config {
-            url,
-            user: "test_user".to_string(),
-            password: "test_password".to_string(),
-        }
-    }
+    use crate::aiseg::test_utils::test_config;
 
     fn create_climate_html(items: Vec<(&str, &str, &str)>) -> String {
         let mut html = r#"<!DOCTYPE html><html><body>"#.to_string();
@@ -176,7 +157,7 @@ mod tests {
                 base_id,
                 name,
                 base_id,
-                temp.chars().nth(0).unwrap_or('0'),
+                temp.chars().next().unwrap_or('0'),
                 base_id,
                 temp.chars().nth(1).unwrap_or('0'),
                 base_id,
@@ -184,7 +165,7 @@ mod tests {
                 base_id,
                 temp.chars().nth(4).unwrap_or('0'),
                 base_id,
-                humidity.chars().nth(0).unwrap_or('0'),
+                humidity.chars().next().unwrap_or('0'),
                 base_id,
                 humidity.chars().nth(1).unwrap_or('0'),
                 base_id,
@@ -207,7 +188,7 @@ mod tests {
             let document = Html::parse_document(&html);
             let timestamp = Local::now();
 
-            let result = parse(&document, "#base1_1", timestamp.clone());
+            let result = parse(&document, "#base1_1", timestamp);
 
             assert!(result.is_ok());
             let metrics = result.unwrap();
@@ -264,9 +245,8 @@ mod tests {
 
             let result = collector.collect(Local::now()).await;
 
-            match &result {
-                Err(e) => panic!("Failed to collect: {}", e),
-                Ok(_) => {}
+            if let Err(e) = &result {
+                panic!("Failed to collect: {}", e)
             }
             let data_points = result.unwrap();
             assert_eq!(data_points.len(), 6); // 3 locations * 2 metrics each
@@ -408,9 +388,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
             assert!(result
                 .unwrap_err()
@@ -432,9 +411,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
             assert!(result
                 .unwrap_err()
@@ -454,9 +432,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
             assert!(result
                 .unwrap_err()
@@ -482,9 +459,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
         }
 
@@ -506,9 +482,8 @@ mod tests {
 
             let result = parse(&document, "#base1_1", timestamp);
 
-            match &result {
-                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
-                Err(_) => {}
+            if let Ok(metrics) = &result {
+                panic!("Expected error but got {} metrics", metrics.len())
             }
         }
 
@@ -534,7 +509,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse value"));
+                .contains("Failed to extract digit from class"));
         }
 
         #[tokio::test]

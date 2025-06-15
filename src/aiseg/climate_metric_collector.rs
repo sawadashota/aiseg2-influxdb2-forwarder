@@ -54,6 +54,21 @@ impl MetricCollector for ClimateMetricCollector {
     }
 }
 
+/// Parses climate data (temperature and humidity) from a specific base element in the HTML document.
+///
+/// # Arguments
+/// * `document` - The parsed HTML document
+/// * `base_id` - The base element ID (e.g., "#base1_1")
+/// * `timestamp` - The timestamp for the metrics
+///
+/// # Returns
+/// An array of two metrics: [temperature, humidity]
+///
+/// # Behavior
+/// - Extracts location name from `.txt_name` element
+/// - Looks for temperature values in elements matching `[id^="num_ond_"][class*="num no"]`
+/// - Looks for humidity values in elements matching `[id^="num_shitudo_"][class*="num no"]`
+/// - If either temperature or humidity elements are missing, defaults to 0.0
 fn parse(
     document: &Html,
     base_id: &str,
@@ -108,6 +123,29 @@ fn parse(
     ])
 }
 
+/// Extracts a numeric value from HTML elements representing digits of a decimal number.
+///
+/// # Arguments
+/// * `elements` - Iterator of HTML elements with class attributes containing numeric values
+///
+/// # Returns
+/// A floating-point number parsed from the extracted digits
+///
+/// # Expected Format
+/// The function expects exactly 3 elements representing digits in format XX.X:
+/// - Element 0: First digit (tens place)
+/// - Element 1: Second digit (ones place)
+/// - Element 2: Third digit (tenths place after decimal)
+///
+/// # Behavior
+/// - Extracts numeric characters from each element's class attribute (e.g., "num no5" -> '5')
+/// - Automatically inserts a decimal point between the second and third digits
+/// - If fewer than 3 elements are provided, remaining positions default to '0'
+/// - If more than 3 elements are provided, only the first 3 are processed
+/// - Returns 0.0 if no elements are provided
+///
+/// # Example
+/// Given elements with classes ["num no2", "num no3", "num no5"], returns 23.5
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
     let mut chars: [char; 4] = ['0', '0', '.', '0'];
     let mut i = 0;

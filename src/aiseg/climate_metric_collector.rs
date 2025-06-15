@@ -4,7 +4,7 @@ use crate::model::{
     ClimateStatusMetric, ClimateStatusMetricCategory, DataPointBuilder, Measurement,
     MetricCollector,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
 use scraper::Html;
 use std::future::Future;
@@ -25,7 +25,7 @@ impl MetricCollector for ClimateMetricCollector {
     fn collect<'a>(
         &'a self,
         timestamp: DateTime<Local>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output=Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
         Box::pin(async move {
             let mut list: Vec<ClimateStatusMetric> = vec![];
 
@@ -109,25 +109,55 @@ fn parse(
 }
 
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
-    let digits: String = elements
-        .take(4)
-        .map(|element| {
-            element
-                .attr("class")
-                .and_then(|class| class.chars().find(|c| c.is_numeric()))
-                .ok_or_else(|| anyhow!("Failed to extract digit from class"))
-        })
-        .collect::<Result<Vec<char>>>()?
-        .into_iter()
-        .collect();
+    // let digits: String = elements
+    //     .take(3)
+    //     .map(|element| {
+    //         element
+    //             .attr("class")
+    //             .and_then(|class| class.chars().find(|c| c.is_numeric()))
+    //             .ok_or_else(|| anyhow!("Failed to extract digit from class"))
+    //     })
+    //     .collect::<Result<Vec<char>>>()?
+    //     .into_iter()
+    //     .collect();
+    //
+    // if digits.len() != 3 {
+    //     return Err(anyhow!("Expected 3 digits but found {}", digits.len()));
+    // }
+    //
+    // // Insert decimal point after first two digits: "123" -> "12.3"
+    // let number_str = format!("{}.{}", &digits[..2], &digits[2..]);
+    // number_str.parse::<f64>().context("Failed to parse value")
+    let mut chars: [char; 4] = ['0', '0', '.', '0'];
+    let mut i = 0;
+    let mut element_count = 0;
 
-    if digits.len() != 4 {
-        return Err(anyhow!("Expected 4 digits but found {}", digits.len()));
+    for element in elements {
+        element_count += 1;
+        if i == 2 {
+            i += 1; // skip dot
+        }
+        if i >= 4 {
+            break; // We have all 4 digits
+        }
+        let class_value = element.attr("class").context("Failed to get class")?;
+        chars[i] = class_value
+            .chars()
+            .filter(|c| c.is_numeric())
+            .collect::<String>()
+            .parse::<char>()
+            .context("Failed to parse value")?;
+        i += 1;
     }
 
-    // Insert decimal point after first two digits: "1234" -> "12.34"
-    let number_str = format!("{}.{}", &digits[..2], &digits[2..]);
-    number_str.parse::<f64>().context("Failed to parse value")
+    if element_count != 4 {
+        return Err(anyhow::anyhow!(
+            "Expected 4 elements but found {}",
+            element_count
+        ));
+    }
+
+    Ok(chars.iter().collect::<String>().parse::<f64>()?)
 }
 
 #[cfg(test)]
@@ -488,7 +518,95 @@ mod tests {
         }
 
         #[test]
-        fn test_extract_num_invalid_class_format() {
+        fn test_extract_num_from_html_class_valid_input() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                    <span class="num4"></span>
+                    <span class="num0"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 23.4);  // Formats as "23.40"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_zero_values() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num0"></span>
+                    <span class="num0"></span>
+                    <span class="num0"></span>
+                    <span class="num0"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 0.0);  // Formats as "00.00"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_mixed_digits() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num9"></span>
+                    <span class="num8"></span>
+                    <span class="num7"></span>
+                    <span class="num0"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 98.7);  // Formats as "98.70"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_with_extra_text() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="prefix_num1_suffix"></span>
+                    <span class="text_num2_more"></span>
+                    <span class="num3_end"></span>
+                    <span class="start_num0"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.30"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_invalid_no_digit() {
             let html = r#"
                 <div id="wrapper">
                     <span class="invalid"></span>
@@ -509,7 +627,80 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to extract digit from class"));
+                .contains("Failed to parse value"));
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_too_few_elements() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num1"></span>
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Expected 4 elements but found 3"));
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_too_many_elements() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="num1"></span>
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                    <span class="num0"></span>
+                    <span class="num5"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            // The function should only process the first 4 elements
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.30"
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_missing_class_attribute() {
+            let html = r#"
+                <div id="wrapper">
+                    <span></span>
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                    <span class="num4"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to get class"));
         }
 
         #[tokio::test]

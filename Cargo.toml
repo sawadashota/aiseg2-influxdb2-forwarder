@@ -22,5 +22,4 @@ futures = "0.3.31"
 [dev-dependencies]
 serial_test = "3.2.0"
 mockito = "1.6.1"
-tokio-test = "0.4.4"
 wiremock = "0.6.2"

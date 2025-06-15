@@ -13,15 +13,39 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// Collector for real-time power metrics from AiSEG2.
+/// 
+/// This collector fetches instantaneous power generation and consumption data,
+/// including both summary totals and detailed breakdowns by source/device.
+/// It implements the MetricCollector trait to integrate with the collection system.
+/// 
+/// # Metrics Collected
+/// - Total power generation and consumption (W)
+/// - Net power flow (buying/selling)
+/// - Breakdown of generation sources (solar, fuel cell, etc.)
+/// - Breakdown of consumption by device/circuit
 pub struct PowerMetricCollector {
+    /// HTTP client for communicating with AiSEG2
     client: Arc<Client>,
 }
 
 impl PowerMetricCollector {
+    /// Creates a new PowerMetricCollector instance.
+    /// 
+    /// # Arguments
+    /// * `client` - Shared HTTP client configured for AiSEG2 communication
     pub fn new(client: Arc<Client>) -> Self {
         Self { client }
     }
 
+    /// Collects power metrics from the main electricity flow page.
+    /// 
+    /// Fetches the main power overview page which contains:
+    /// - Total generation and consumption values
+    /// - Breakdown of generation sources
+    /// 
+    /// # Returns
+    /// A vector of DataPointBuilder instances for all metrics found on the main page
     async fn collect_from_main_page(&self) -> Result<Vec<Box<dyn DataPointBuilder>>> {
         let response = self.client.get("/page/electricflow/111").await?;
         let document = Html::parse_document(&response);
@@ -34,6 +58,17 @@ impl PowerMetricCollector {
         .collect())
     }
 
+    /// Extracts summary power metrics from the main page.
+    /// 
+    /// Parses the HTML to find:
+    /// - Total generation power (総発電電力)
+    /// - Total consumption power (総消費電力)
+    /// - Net power flow (売買電力) - positive when selling, negative when buying
+    /// 
+    /// Values are converted from kW to W for consistency.
+    /// 
+    /// # Arguments
+    /// * `document` - Parsed HTML document from the main power page
     fn collect_total_metrics(&self, document: &Html) -> Result<Vec<Box<dyn DataPointBuilder>>> {
         let generation = kilowatts_to_watts(parse_f64_from_html(document, "#g_capacity")?);
         let consumption = kilowatts_to_watts(parse_f64_from_html(document, "#u_capacity")?);
@@ -57,6 +92,17 @@ impl PowerMetricCollector {
         ])
     }
 
+    /// Extracts detailed generation source metrics from the main page.
+    /// 
+    /// Iterates through up to 4 generation sources (solar, fuel cell, etc.)
+    /// and collects the power output for each. Stops when no more sources
+    /// are found in the HTML.
+    /// 
+    /// # Arguments
+    /// * `document` - Parsed HTML document from the main power page
+    /// 
+    /// # Returns
+    /// Power breakdown metrics for each active generation source
     fn collect_generation_detail_metrics(
         &self,
         document: &Html,
@@ -81,12 +127,24 @@ impl PowerMetricCollector {
         Ok(res)
     }
 
+    /// Collects detailed consumption metrics from dedicated pages.
+    /// 
+    /// This is a wrapper method that delegates to collect_consumption_detail_metrics.
+    /// Separated from main page collection as consumption details are on different pages.
     async fn collect_from_consumption_detail_pages(
         &self,
     ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
         self.collect_consumption_detail_metrics().await
     }
 
+    /// Orchestrates the collection of consumption metrics from multiple pages.
+    /// 
+    /// Collects consumption data from paginated results and merges duplicate
+    /// entries (same device appearing on multiple pages). This ensures each
+    /// device/circuit appears only once with its total consumption.
+    /// 
+    /// # Returns
+    /// Merged and deduplicated consumption metrics ready for InfluxDB
     async fn collect_consumption_detail_metrics(&self) -> Result<Vec<Box<dyn DataPointBuilder>>> {
         let mut all_items: Vec<PowerStatusBreakdownMetric> = vec![];
 
@@ -100,6 +158,16 @@ impl PowerMetricCollector {
             .collect())
     }
 
+    /// Iterates through paginated consumption detail pages.
+    /// 
+    /// The AiSEG2 system paginates consumption devices across multiple pages.
+    /// This method:
+    /// - Fetches up to 20 pages of consumption data
+    /// - Detects when pagination is complete (duplicate device names)
+    /// - Collects all unique consumption metrics
+    /// 
+    /// # Returns
+    /// All consumption metrics from all pages (may contain duplicates)
     async fn collect_consumption_pages(&self) -> Result<Vec<PowerStatusBreakdownMetric>> {
         let mut last_page_names = "".to_string();
         let mut all_items: Vec<PowerStatusBreakdownMetric> = vec![];
@@ -129,6 +197,19 @@ impl PowerMetricCollector {
         Ok(all_items)
     }
 
+    /// Parses a single consumption detail page.
+    /// 
+    /// Each page can contain up to 10 consumption devices/circuits.
+    /// For each device found:
+    /// - Extracts the device name
+    /// - Extracts the power consumption (defaults to 0 if parsing fails)
+    /// - Creates a PowerStatusBreakdownMetric
+    /// 
+    /// # Arguments
+    /// * `document` - Parsed HTML document from a consumption detail page
+    /// 
+    /// # Returns
+    /// Consumption metrics for all devices found on this page
     fn parse_consumption_page(&self, document: &Html) -> Result<Vec<PowerStatusBreakdownMetric>> {
         let mut items: Vec<PowerStatusBreakdownMetric> = vec![];
 
@@ -155,6 +236,21 @@ impl PowerMetricCollector {
 }
 
 impl MetricCollector for PowerMetricCollector {
+    /// Collects all power metrics from AiSEG2.
+    /// 
+    /// This is the main entry point for power metric collection. It:
+    /// 1. Fetches the main power page for totals and generation details
+    /// 2. Fetches consumption detail pages for device-level metrics
+    /// 3. Returns all metrics as DataPointBuilder instances
+    /// 
+    /// The timestamp parameter is ignored as power metrics represent
+    /// instantaneous values at collection time.
+    /// 
+    /// # Arguments
+    /// * `_` - Timestamp (unused for power metrics)
+    /// 
+    /// # Returns
+    /// A future that resolves to all collected power metrics
     fn collect<'a>(
         &'a self,
         _: DateTime<Local>,

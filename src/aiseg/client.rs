@@ -61,7 +61,7 @@ mod tests {
     fn test_client_new() {
         let config = test_config();
         let client = Client::new(config);
-        
+
         assert_eq!(client.config.url, "http://test.local");
         assert_eq!(client.config.user, "test_user");
         assert_eq!(client.config.password, "test_password");
@@ -71,7 +71,7 @@ mod tests {
     async fn test_get_success() {
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-        
+
         // Mock successful response
         let _mock = server
             .mock("GET", "/test/path")
@@ -85,10 +85,10 @@ mod tests {
             user: "test_user".to_string(),
             password: "test_password".to_string(),
         };
-        
+
         let client = Client::new(config);
         let result = client.get("/test/path").await;
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "<html><body>Test Response</body></html>");
     }
@@ -97,7 +97,7 @@ mod tests {
     async fn test_get_404_error() {
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-        
+
         // Mock 404 response
         let _mock = server
             .mock("GET", "/not/found")
@@ -111,13 +111,15 @@ mod tests {
             user: "test_user".to_string(),
             password: "test_password".to_string(),
         };
-        
+
         let client = Client::new(config);
         let result = client.get("/not/found").await;
-        
+
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("Request failed with status: 404"));
+        assert!(error
+            .to_string()
+            .contains("Request failed with status: 404"));
         assert!(error.to_string().contains("Not Found"));
     }
 
@@ -125,7 +127,7 @@ mod tests {
     async fn test_get_500_error() {
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-        
+
         // Mock 500 response
         let _mock = server
             .mock("GET", "/error")
@@ -139,13 +141,15 @@ mod tests {
             user: "test_user".to_string(),
             password: "test_password".to_string(),
         };
-        
+
         let client = Client::new(config);
         let result = client.get("/error").await;
-        
+
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("Request failed with status: 500"));
+        assert!(error
+            .to_string()
+            .contains("Request failed with status: 500"));
         assert!(error.to_string().contains("Internal Server Error"));
     }
 
@@ -153,7 +157,7 @@ mod tests {
     async fn test_get_with_json_response() {
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-        
+
         // Mock JSON response
         let _mock = server
             .mock("GET", "/api/data")
@@ -167,10 +171,10 @@ mod tests {
             user: "test_user".to_string(),
             password: "test_password".to_string(),
         };
-        
+
         let client = Client::new(config);
         let result = client.get("/api/data").await;
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), r#"{"status":"ok","value":123.45}"#);
     }
@@ -179,7 +183,7 @@ mod tests {
     async fn test_get_with_html_response() {
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-        
+
         // Mock HTML response with Japanese characters
         let html_body = r#"
             <html>
@@ -189,7 +193,7 @@ mod tests {
                 </body>
             </html>
         "#;
-        
+
         let _mock = server
             .mock("GET", "/page/electricflow/111")
             .with_status(200)
@@ -202,10 +206,10 @@ mod tests {
             user: "test_user".to_string(),
             password: "test_password".to_string(),
         };
-        
+
         let client = Client::new(config);
         let result = client.get("/page/electricflow/111").await;
-        
+
         assert!(result.is_ok());
         let body = result.unwrap();
         assert!(body.contains("g_capacity"));
@@ -221,11 +225,14 @@ mod tests {
             user: "test_user".to_string(),
             password: "test_password".to_string(),
         };
-        
+
         let client = Client::new(config);
         let result = client.get("/test").await;
-        
+
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to send GET request"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to send GET request"));
     }
 }

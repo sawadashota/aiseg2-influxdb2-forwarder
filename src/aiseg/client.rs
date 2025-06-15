@@ -56,6 +56,7 @@ impl Client {
     }
 
     /// Returns the base URL of the AiSEG2 system.
+    #[cfg(test)]
     pub fn base_url(&self) -> &str {
         &self.config.url
     }

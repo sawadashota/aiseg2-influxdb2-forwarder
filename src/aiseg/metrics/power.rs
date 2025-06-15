@@ -168,4 +168,3 @@ mod tests {
         assert_eq!(fridge.value, 50);
     }
 }
-

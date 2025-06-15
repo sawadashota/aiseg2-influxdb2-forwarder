@@ -88,4 +88,3 @@ mod tests {
         assert!(!collector.client().base_url().is_empty());
     }
 }
-

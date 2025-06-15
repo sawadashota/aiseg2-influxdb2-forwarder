@@ -151,4 +151,3 @@ mod tests {
         assert!(!has_duplicate_device_names(&[], &metrics1));
     }
 }
-

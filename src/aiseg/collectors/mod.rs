@@ -5,4 +5,3 @@ pub mod power_collector;
 
 pub use climate_collector::ClimateMetricCollector;
 pub use power_collector::PowerMetricCollector;
-

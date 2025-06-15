@@ -20,12 +20,14 @@ pub trait CollectorBase {
 }
 
 /// Helper for managing pagination state during collection.
+#[allow(dead_code)]
 pub struct PaginationState {
     current_page: usize,
     max_pages: usize,
     items_collected: usize,
 }
 
+#[allow(dead_code)]
 impl PaginationState {
     /// Creates a new pagination state.
     pub fn new(max_pages: usize) -> Self {
@@ -64,6 +66,7 @@ pub type MetricResult = Result<Vec<Box<dyn DataPointBuilder>>>;
 ///
 /// This is used when the same device/metric appears multiple times
 /// across different pages or sources.
+#[allow(dead_code)]
 pub fn merge_duplicate_metrics<T, K, F>(metrics: Vec<T>, key_fn: F) -> Vec<T>
 where
     T: Clone,

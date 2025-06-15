@@ -109,6 +109,7 @@ pub fn parse_generation_details(document: &Html, max_items: usize) -> Result<Vec
 ///
 /// # Returns
 /// All items collected from all pages
+#[allow(dead_code)]
 pub async fn paginate_collection<T, F, P, C>(
     max_pages: usize,
     mut fetch_page: F,
@@ -203,4 +204,3 @@ mod tests {
         assert_eq!(details[1], ("燃料電池".to_string(), 0.5));
     }
 }
-

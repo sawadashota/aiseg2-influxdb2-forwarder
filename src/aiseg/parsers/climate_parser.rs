@@ -201,4 +201,3 @@ mod tests {
         assert_eq!(metrics.len(), 2); // 1 location × 2 metrics
     }
 }
-

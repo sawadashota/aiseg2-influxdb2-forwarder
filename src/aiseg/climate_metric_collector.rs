@@ -6,7 +6,6 @@ use crate::model::{
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
-use scraper::element_ref::Select;
 use scraper::Html;
 use std::future::Future;
 use std::pin::Pin;
@@ -109,12 +108,18 @@ fn parse(
     ])
 }
 
-fn extract_num_from_html_class(elements: Select) -> Result<f64> {
+fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
     let mut chars: [char; 4] = ['0', '0', '.', '0'];
     let mut i = 0;
+    let mut element_count = 0;
+
     for element in elements {
+        element_count += 1;
         if i == 2 {
             i += 1; // skip dot
+        }
+        if i >= 4 {
+            break; // We have all 4 digits
         }
         let class_value = element.attr("class").context("Failed to get class")?;
         chars[i] = class_value
@@ -125,5 +130,436 @@ fn extract_num_from_html_class(elements: Select) -> Result<f64> {
             .context("Failed to parse value")?;
         i += 1;
     }
+
+    if element_count != 4 {
+        return Err(anyhow::anyhow!(
+            "Expected 4 elements but found {}",
+            element_count
+        ));
+    }
+
     Ok(chars.iter().collect::<String>().parse::<f64>()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config;
+
+    fn test_config(url: String) -> config::Aiseg2Config {
+        config::Aiseg2Config {
+            url,
+            user: "test_user".to_string(),
+            password: "test_password".to_string(),
+        }
+    }
+
+    fn create_climate_html(items: Vec<(&str, &str, &str)>) -> String {
+        let mut html = r#"<!DOCTYPE html><html><body>"#.to_string();
+
+        for (i, (name, temp, humidity)) in items.iter().enumerate() {
+            let base_id = i + 1;
+            html.push_str(&format!(
+                r#"<div id="base{}_1">
+                    <div class="txt_name">{}</div>
+                    <div class="num_wrapper">
+                        <div id="num_ond_{}" class="num{}"></div>
+                        <div id="num_ond_{}" class="num{}"></div>
+                        <div id="num_ond_{}" class="num{}"></div>
+                        <div id="num_ond_{}" class="num{}"></div>
+                        <div id="num_shitudo_{}" class="num{}"></div>
+                        <div id="num_shitudo_{}" class="num{}"></div>
+                        <div id="num_shitudo_{}" class="num{}"></div>
+                        <div id="num_shitudo_{}" class="num{}"></div>
+                    </div>
+                </div>"#,
+                base_id,
+                name,
+                base_id,
+                temp.chars().nth(0).unwrap_or('0'),
+                base_id,
+                temp.chars().nth(1).unwrap_or('0'),
+                base_id,
+                temp.chars().nth(3).unwrap_or('0'),
+                base_id,
+                temp.chars().nth(4).unwrap_or('0'),
+                base_id,
+                humidity.chars().nth(0).unwrap_or('0'),
+                base_id,
+                humidity.chars().nth(1).unwrap_or('0'),
+                base_id,
+                humidity.chars().nth(3).unwrap_or('0'),
+                base_id,
+                humidity.chars().nth(4).unwrap_or('0'),
+            ));
+        }
+
+        html.push_str(r#"</body></html>"#);
+        html
+    }
+
+    mod succeeds {
+        use super::*;
+
+        #[test]
+        fn test_parse_single_base_element() {
+            let html = create_climate_html(vec![("Living Room", "23.50", "45.60")]);
+            let document = Html::parse_document(&html);
+            let timestamp = Local::now();
+
+            let result = parse(&document, "#base1_1", timestamp.clone());
+
+            assert!(result.is_ok());
+            let metrics = result.unwrap();
+            assert_eq!(metrics.len(), 2);
+
+            let temp_metric = &metrics[0];
+            assert_eq!(temp_metric.measurement, Measurement::Climate);
+            assert_eq!(temp_metric.name, "Living Room");
+            assert_eq!(temp_metric.value, 23.5);
+            matches!(
+                temp_metric.category,
+                ClimateStatusMetricCategory::Temperature
+            );
+
+            let humidity_metric = &metrics[1];
+            assert_eq!(humidity_metric.measurement, Measurement::Climate);
+            assert_eq!(humidity_metric.name, "Living Room");
+            assert_eq!(humidity_metric.value, 45.6);
+            matches!(
+                humidity_metric.category,
+                ClimateStatusMetricCategory::Humidity
+            );
+        }
+
+        #[tokio::test]
+        async fn test_collect_single_page() {
+            let mut server = mockito::Server::new_async().await;
+            let mock_url = server.url();
+
+            let html = create_climate_html(vec![
+                ("Living Room", "23.50", "45.60"),
+                ("Bedroom", "21.30", "52.10"),
+                ("Kitchen", "25.80", "38.90"),
+            ]);
+
+            let _mock1 = server
+                .mock("GET", "/page/airenvironment/41?page=1")
+                .with_status(200)
+                .with_body(html)
+                .create_async()
+                .await;
+
+            // Mock page 2 to trigger early termination
+            let _mock2 = server
+                .mock("GET", "/page/airenvironment/41?page=2")
+                .with_status(200)
+                .with_body(r#"<html><body></body></html>"#)
+                .create_async()
+                .await;
+
+            let config = test_config(mock_url);
+            let client = Arc::new(Client::new(config));
+            let collector = ClimateMetricCollector::new(client);
+
+            let result = collector.collect(Local::now()).await;
+
+            match &result {
+                Err(e) => panic!("Failed to collect: {}", e),
+                Ok(_) => {}
+            }
+            let data_points = result.unwrap();
+            assert_eq!(data_points.len(), 6); // 3 locations * 2 metrics each
+
+            for dp in data_points {
+                assert!(dp.to_point().is_ok());
+            }
+        }
+
+        #[tokio::test]
+        async fn test_collect_multiple_pages() {
+            let mut server = mockito::Server::new_async().await;
+            let mock_url = server.url();
+
+            let page1_html = create_climate_html(vec![
+                ("Room 1", "20.00", "40.00"),
+                ("Room 2", "21.00", "41.00"),
+                ("Room 3", "22.00", "42.00"),
+            ]);
+
+            let page2_html = create_climate_html(vec![
+                ("Room 4", "23.00", "43.00"),
+                ("Room 5", "24.00", "44.00"),
+            ]);
+
+            let page3_html = create_climate_html(vec![]);
+
+            let _mock1 = server
+                .mock("GET", "/page/airenvironment/41?page=1")
+                .with_status(200)
+                .with_body(page1_html)
+                .create_async()
+                .await;
+
+            let _mock2 = server
+                .mock("GET", "/page/airenvironment/41?page=2")
+                .with_status(200)
+                .with_body(page2_html)
+                .create_async()
+                .await;
+
+            let _mock3 = server
+                .mock("GET", "/page/airenvironment/41?page=3")
+                .with_status(200)
+                .with_body(page3_html)
+                .create_async()
+                .await;
+
+            let config = test_config(mock_url);
+            let client = Arc::new(Client::new(config));
+            let collector = ClimateMetricCollector::new(client);
+
+            let result = collector.collect(Local::now()).await;
+
+            assert!(result.is_ok());
+            let data_points = result.unwrap();
+            assert_eq!(data_points.len(), 10); // 5 locations * 2 metrics each
+        }
+
+        #[test]
+        fn test_extract_num_from_html_class_various_values() {
+            let test_cases = vec![
+                (vec!["0", "0", "0", "0"], 0.0),
+                (vec!["2", "5", "5", "0"], 25.5),
+                (vec!["9", "9", "9", "0"], 99.9),
+                (vec!["0", "1", "2", "0"], 1.2),
+                (vec!["5", "0", "0", "0"], 50.0),
+            ];
+
+            for (digits, expected) in test_cases {
+                let html = format!(
+                    r#"<div id="wrapper">
+                        <span class="num{}"></span>
+                        <span class="num{}"></span>
+                        <span class="num{}"></span>
+                        <span class="num{}"></span>
+                    </div>"#,
+                    digits[0], digits[1], digits[2], digits[3]
+                );
+                let document = scraper::Html::parse_document(&html);
+                let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+                let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+                let span_selector = scraper::Selector::parse("span").unwrap();
+                let elements = wrapper_element.select(&span_selector);
+
+                let result = extract_num_from_html_class(elements);
+                assert!(result.is_ok());
+                assert_eq!(result.unwrap(), expected);
+            }
+        }
+
+        #[tokio::test]
+        async fn test_collect_with_early_termination() {
+            let mut server = mockito::Server::new_async().await;
+            let mock_url = server.url();
+
+            let page1_html = create_climate_html(vec![
+                ("Room 1", "20.00", "40.00"),
+                ("Room 2", "21.00", "41.00"),
+            ]);
+
+            // Page 2 has no valid base1_1 element, causing early termination
+            let page2_html = r#"<html><body><div>No climate data</div></body></html>"#;
+
+            let _mock1 = server
+                .mock("GET", "/page/airenvironment/41?page=1")
+                .with_status(200)
+                .with_body(page1_html)
+                .create_async()
+                .await;
+
+            let _mock2 = server
+                .mock("GET", "/page/airenvironment/41?page=2")
+                .with_status(200)
+                .with_body(page2_html)
+                .create_async()
+                .await;
+
+            let config = test_config(mock_url);
+            let client = Arc::new(Client::new(config));
+            let collector = ClimateMetricCollector::new(client);
+
+            let result = collector.collect(Local::now()).await;
+
+            assert!(result.is_ok());
+            let data_points = result.unwrap();
+            assert_eq!(data_points.len(), 4); // Only page 1 data (2 locations * 2 metrics)
+        }
+    }
+
+    mod fails {
+        use super::*;
+
+        #[test]
+        fn test_parse_missing_base_element() {
+            let html = r#"<html><body><div>No base element</div></body></html>"#;
+            let document = Html::parse_document(html);
+            let timestamp = Local::now();
+
+            let result = parse(&document, "#base1_1", timestamp);
+
+            match &result {
+                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
+                Err(_) => {}
+            }
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to find value"));
+        }
+
+        #[test]
+        fn test_parse_missing_name_element() {
+            let html = r#"
+                <div id="base1_1">
+                    <div class="num_wrapper">
+                        <div id="num_ond_1" class="num2"></div>
+                    </div>
+                </div>
+            "#;
+            let document = Html::parse_document(html);
+            let timestamp = Local::now();
+
+            let result = parse(&document, "#base1_1", timestamp);
+
+            match &result {
+                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
+                Err(_) => {}
+            }
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to find name"));
+        }
+
+        #[test]
+        fn test_parse_missing_num_wrapper() {
+            let html = r#"
+                <div id="base1_1">
+                    <div class="txt_name">Room</div>
+                </div>
+            "#;
+            let document = Html::parse_document(html);
+            let timestamp = Local::now();
+
+            let result = parse(&document, "#base1_1", timestamp);
+
+            match &result {
+                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
+                Err(_) => {}
+            }
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to find num_wrapper"));
+        }
+
+        #[test]
+        fn test_parse_missing_temperature() {
+            let html = r#"
+                <div id="base1_1">
+                    <div class="txt_name">Room</div>
+                    <div class="num_wrapper">
+                        <div id="num_shitudo_1" class="num5"></div>
+                        <div id="num_shitudo_1" class="num0"></div>
+                        <div id="num_shitudo_1" class="num0"></div>
+                        <div id="num_shitudo_1" class="num0"></div>
+                    </div>
+                </div>
+            "#;
+            let document = Html::parse_document(html);
+            let timestamp = Local::now();
+
+            let result = parse(&document, "#base1_1", timestamp);
+
+            match &result {
+                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
+                Err(_) => {}
+            }
+        }
+
+        #[test]
+        fn test_parse_missing_humidity() {
+            let html = r#"
+                <div id="base1_1">
+                    <div class="txt_name">Room</div>
+                    <div class="num_wrapper">
+                        <div id="num_ond_1" class="num2"></div>
+                        <div id="num_ond_1" class="num5"></div>
+                        <div id="num_ond_1" class="num0"></div>
+                        <div id="num_ond_1" class="num0"></div>
+                    </div>
+                </div>
+            "#;
+            let document = Html::parse_document(html);
+            let timestamp = Local::now();
+
+            let result = parse(&document, "#base1_1", timestamp);
+
+            match &result {
+                Ok(metrics) => panic!("Expected error but got {} metrics", metrics.len()),
+                Err(_) => {}
+            }
+        }
+
+        #[test]
+        fn test_extract_num_invalid_class_format() {
+            let html = r#"
+                <div id="wrapper">
+                    <span class="invalid"></span>
+                    <span class="num2"></span>
+                    <span class="num3"></span>
+                    <span class="num4"></span>
+                </div>
+            "#;
+            let document = scraper::Html::parse_document(html);
+            let wrapper_selector = scraper::Selector::parse("#wrapper").unwrap();
+            let wrapper_element = document.select(&wrapper_selector).next().unwrap();
+            let span_selector = scraper::Selector::parse("span").unwrap();
+            let elements = wrapper_element.select(&span_selector);
+
+            let result = extract_num_from_html_class(elements);
+
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse value"));
+        }
+
+        #[tokio::test]
+        async fn test_collect_http_error() {
+            let mut server = mockito::Server::new_async().await;
+            let mock_url = server.url();
+
+            let _mock = server
+                .mock("GET", "/page/airenvironment/41?page=1")
+                .with_status(500)
+                .with_body("Internal Server Error")
+                .create_async()
+                .await;
+
+            let config = test_config(mock_url);
+            let client = Arc::new(Client::new(config));
+            let collector = ClimateMetricCollector::new(client);
+
+            let result = collector.collect(Local::now()).await;
+
+            assert!(result.is_err());
+            match result {
+                Err(e) => assert!(e.to_string().contains("Request failed with status: 500")),
+                Ok(_) => panic!("Expected error but got success"),
+            }
+        }
+    }
 }

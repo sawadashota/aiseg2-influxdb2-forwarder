@@ -107,10 +107,11 @@ mod tests {
     fn test_make_query() {
         let date = Local.with_ymd_and_hms(2024, 6, 8, 10, 30, 0).unwrap();
         let query = make_query("30", date);
-        
+
         // Decode the base64 to verify the JSON content
         let decoded = String::from_utf8(STANDARD.decode(&query).unwrap()).unwrap();
-        let expected = r#"{"day":[2024, 6, 8],"term":"2024/06/08","termStr":"day","id":"1","circuitid":"30"}"#;
+        let expected =
+            r#"{"day":[2024, 6, 8],"term":"2024/06/08","termStr":"day","id":"1","circuitid":"30"}"#;
         assert_eq!(decoded, expected);
     }
 
@@ -138,12 +139,15 @@ mod tests {
         async fn test_collect_by_circuit_id_parses_valid_html() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local.with_ymd_and_hms(2024, 6, 8, 10, 0, 0).unwrap();
             let expected_query = make_query("30", day_of_beginning(&date));
-            
+
             let _mock = server
-                .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", expected_query).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("123.45"))
                 .create_async()
@@ -152,11 +156,11 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector
                 .collect_by_circuit_id(date, "EV", "30", Unit::Kwh)
                 .await;
-            
+
             assert!(result.is_ok());
             let metric = result.unwrap();
             assert_eq!(metric.value, 123.45);
@@ -168,13 +172,16 @@ mod tests {
         async fn test_collect_by_circuit_id_returns_correct_metric() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local.with_ymd_and_hms(2024, 6, 8, 15, 30, 45).unwrap();
             let expected_date = day_of_beginning(&date);
             let expected_query = make_query("27", expected_date);
-            
+
             let _mock = server
-                .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", expected_query).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("456.78"))
                 .create_async()
@@ -183,11 +190,11 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector
                 .collect_by_circuit_id(date, "リビングエアコン", "27", Unit::Kwh)
                 .await;
-            
+
             assert!(result.is_ok());
             let metric = result.unwrap();
             assert_eq!(metric.measurement, Measurement::CircuitDailyTotal);
@@ -200,7 +207,7 @@ mod tests {
         async fn test_collect_by_circuit_id_handles_decimal_values() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let test_cases = vec![
                 ("0.0", 0.0),
                 ("1", 1.0),
@@ -211,9 +218,12 @@ mod tests {
             for (html_value, expected_value) in test_cases {
                 let date = Local::now();
                 let expected_query = make_query("25", day_of_beginning(&date));
-                
+
                 let _mock = server
-                    .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                    .mock(
+                        "GET",
+                        format!("/page/graph/584?data={}", expected_query).as_str(),
+                    )
                     .with_status(200)
                     .with_body(create_html_response(html_value))
                     .create_async()
@@ -222,11 +232,11 @@ mod tests {
                 let config = test_config(mock_url.clone());
                 let client = Arc::new(Client::new(config));
                 let collector = CircuitDailyTotalMetricCollector::new(client);
-                
+
                 let result = collector
                     .collect_by_circuit_id(date, "Test", "25", Unit::Kwh)
                     .await;
-                
+
                 assert!(result.is_ok());
                 assert_eq!(result.unwrap().value, expected_value);
             }
@@ -236,10 +246,10 @@ mod tests {
         async fn test_collect_returns_all_four_circuits() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local::now();
             let expected_date = day_of_beginning(&date);
-            
+
             // Mock all four circuit responses
             let circuits = vec![
                 ("30", "100.0"),
@@ -247,11 +257,14 @@ mod tests {
                 ("26", "300.0"),
                 ("25", "400.0"),
             ];
-            
+
             for (circuit_id, value) in &circuits {
                 let expected_query = make_query(circuit_id, expected_date);
                 let _mock = server
-                    .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                    .mock(
+                        "GET",
+                        format!("/page/graph/584?data={}", expected_query).as_str(),
+                    )
                     .with_status(200)
                     .with_body(create_html_response(value))
                     .create_async()
@@ -261,13 +274,13 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector.collect(date).await;
-            
+
             assert!(result.is_ok());
             let data_points = result.unwrap();
             assert_eq!(data_points.len(), 4);
-            
+
             // Verify each data point can be converted to InfluxDB format
             for dp in data_points {
                 assert!(dp.to_point().is_ok());
@@ -278,34 +291,46 @@ mod tests {
         async fn test_collect_with_mixed_values() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local::now();
             let expected_date = day_of_beginning(&date);
-            
+
             // Mock responses with different values
             let _mock1 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("30", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("30", expected_date)).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("0.0"))
                 .create_async()
                 .await;
-            
+
             let _mock2 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("27", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("27", expected_date)).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("999.99"))
                 .create_async()
                 .await;
-            
+
             let _mock3 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("26", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("26", expected_date)).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("50.5"))
                 .create_async()
                 .await;
-            
+
             let _mock4 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("25", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("25", expected_date)).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("1.23"))
                 .create_async()
@@ -314,9 +339,9 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector.collect(date).await;
-            
+
             assert!(result.is_ok());
             let data_points = result.unwrap();
             assert_eq!(data_points.len(), 4);
@@ -330,15 +355,18 @@ mod tests {
         async fn test_collect_by_circuit_id_missing_val_kwh() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local::now();
             let expected_query = make_query("30", day_of_beginning(&date));
-            
+
             // HTML without #val_kwh element
             let html_without_val_kwh = r#"<html><body><div>No value here</div></body></html>"#;
-            
+
             let _mock = server
-                .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", expected_query).as_str(),
+                )
                 .with_status(200)
                 .with_body(html_without_val_kwh)
                 .create_async()
@@ -347,26 +375,32 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector
                 .collect_by_circuit_id(date, "EV", "30", Unit::Kwh)
                 .await;
-            
+
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("Failed to find value"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to find value"));
         }
 
         #[tokio::test]
         async fn test_collect_by_circuit_id_invalid_numeric_value() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local::now();
             let expected_query = make_query("30", day_of_beginning(&date));
-            
+
             // HTML with non-numeric value
             let _mock = server
-                .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", expected_query).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("not-a-number"))
                 .create_async()
@@ -375,25 +409,31 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector
                 .collect_by_circuit_id(date, "EV", "30", Unit::Kwh)
                 .await;
-            
+
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("Failed to parse value"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse value"));
         }
 
         #[tokio::test]
         async fn test_collect_by_circuit_id_http_error() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local::now();
             let expected_query = make_query("30", day_of_beginning(&date));
-            
+
             let _mock = server
-                .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", expected_query).as_str(),
+                )
                 .with_status(500)
                 .with_body("Internal Server Error")
                 .create_async()
@@ -402,48 +442,63 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector
                 .collect_by_circuit_id(date, "EV", "30", Unit::Kwh)
                 .await;
-            
+
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("Request failed with status: 500"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Request failed with status: 500"));
         }
 
         #[tokio::test]
         async fn test_collect_one_circuit_fails() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local::now();
             let expected_date = day_of_beginning(&date);
-            
+
             // First three circuits succeed
             let _mock1 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("30", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("30", expected_date)).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("100.0"))
                 .create_async()
                 .await;
-            
+
             let _mock2 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("27", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("27", expected_date)).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("200.0"))
                 .create_async()
                 .await;
-            
+
             let _mock3 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("26", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("26", expected_date)).as_str(),
+                )
                 .with_status(200)
                 .with_body(create_html_response("300.0"))
                 .create_async()
                 .await;
-            
+
             // Fourth circuit fails
             let _mock4 = server
-                .mock("GET", format!("/page/graph/584?data={}", make_query("25", expected_date)).as_str())
+                .mock(
+                    "GET",
+                    format!("/page/graph/584?data={}", make_query("25", expected_date)).as_str(),
+                )
                 .with_status(404)
                 .with_body("Not Found")
                 .create_async()
@@ -452,9 +507,9 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector.collect(date).await;
-            
+
             // The collect method should fail if any circuit fails
             assert!(result.is_err());
         }
@@ -463,17 +518,20 @@ mod tests {
         async fn test_collect_all_circuits_fail() {
             let mut server = mockito::Server::new_async().await;
             let mock_url = server.url();
-            
+
             let date = Local::now();
             let expected_date = day_of_beginning(&date);
-            
+
             // All circuits return errors
             let circuits = vec!["30", "27", "26", "25"];
-            
+
             for circuit_id in circuits {
                 let expected_query = make_query(circuit_id, expected_date);
                 let _mock = server
-                    .mock("GET", format!("/page/graph/584?data={}", expected_query).as_str())
+                    .mock(
+                        "GET",
+                        format!("/page/graph/584?data={}", expected_query).as_str(),
+                    )
                     .with_status(503)
                     .with_body("Service Unavailable")
                     .create_async()
@@ -483,9 +541,9 @@ mod tests {
             let config = test_config(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
-            
+
             let result = collector.collect(date).await;
-            
+
             assert!(result.is_err());
             match result {
                 Err(e) => assert!(e.to_string().contains("Request failed with status: 503")),

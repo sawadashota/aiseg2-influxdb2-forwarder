@@ -9,15 +9,47 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// Collector for individual circuit daily total power consumption metrics.
+/// 
+/// This collector retrieves daily power consumption data for specific electrical
+/// circuits in the home, such as air conditioners and electric vehicle chargers.
+/// Unlike the main daily total collector, this focuses on individual circuit
+/// consumption to provide detailed breakdowns of electricity usage.
+/// 
+/// # Circuits Monitored
+/// - Circuit 30: EV (Electric Vehicle charger)
+/// - Circuit 27: Living room air conditioner
+/// - Circuit 26: Master bedroom air conditioner
+/// - Circuit 25: Western room 2 air conditioner
 pub struct CircuitDailyTotalMetricCollector {
     client: Arc<Client>,
 }
 
 impl CircuitDailyTotalMetricCollector {
+    /// Creates a new instance of CircuitDailyTotalMetricCollector.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `client` - Shared AiSEG2 client for making HTTP requests
     pub fn new(client: Arc<Client>) -> Self {
         Self { client }
     }
 
+    /// Collects daily total power consumption for a specific circuit.
+    /// 
+    /// Retrieves the power consumption data for an individual circuit from
+    /// the AiSEG2 system using graph ID 584 with circuit-specific parameters.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `date` - The date to collect metrics for (normalized to beginning of day)
+    /// * `name` - Human-readable name for the circuit (e.g., "EV", "リビングエアコン")
+    /// * `circuit_id` - The AiSEG2 circuit ID (e.g., "30", "27")
+    /// * `unit` - The unit of measurement (typically kWh for power consumption)
+    /// 
+    /// # Returns
+    /// 
+    /// A PowerTotalMetric containing the circuit's daily consumption data
     async fn collect_by_circuit_id(
         &self,
         date: DateTime<Local>,
@@ -45,6 +77,25 @@ impl CircuitDailyTotalMetricCollector {
 }
 
 impl MetricCollector for CircuitDailyTotalMetricCollector {
+    /// Collects daily total metrics for all monitored circuits.
+    /// 
+    /// Fetches power consumption data for four predefined circuits:
+    /// 1. EV charger (circuit 30)
+    /// 2. Living room air conditioner (circuit 27)
+    /// 3. Master bedroom air conditioner (circuit 26)
+    /// 4. Western room 2 air conditioner (circuit 25)
+    /// 
+    /// All circuits use the same graph endpoint (584) but with different
+    /// circuit IDs in the query parameters.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `timestamp` - The timestamp for collection (normalized to beginning of day)
+    /// 
+    /// # Returns
+    /// 
+    /// A vector of DataPointBuilder instances for all circuits, or an error
+    /// if any circuit data collection fails
     fn collect<'a>(
         &'a self,
         timestamp: DateTime<Local>,
@@ -67,8 +118,25 @@ impl MetricCollector for CircuitDailyTotalMetricCollector {
     }
 }
 
-// makeDataQuery is base64 encoded JSON string
-// ex: {"day":[2024,6,8],"term":"2024/06/08","termStr":"day","id":"1","circuitid":"30"}
+/// Creates a base64-encoded query string for circuit-specific daily totals.
+/// 
+/// The AiSEG2 circuit API requires a more complex query format than the
+/// general daily totals, including term formatting and circuit ID specification.
+/// 
+/// # Arguments
+/// 
+/// * `circuit_id` - The specific circuit ID to query (e.g., "30" for EV)
+/// * `date` - The date to query for
+/// 
+/// # Returns
+/// 
+/// A base64-encoded string of the JSON query
+/// 
+/// # Example JSON (before encoding)
+/// 
+/// ```json
+/// {"day":[2024,6,8],"term":"2024/06/08","termStr":"day","id":"1","circuitid":"30"}
+/// ```
 fn make_query(circuit_id: &str, date: DateTime<Local>) -> String {
     let query = format!(
         r#"{{"day":[{}, {}, {}],"term":"{}","termStr":"day","id":"1","circuitid":"{}"}}"#,

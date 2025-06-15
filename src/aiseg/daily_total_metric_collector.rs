@@ -9,15 +9,36 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// Collector for daily total metrics from AiSEG2 system.
+/// 
+/// This collector retrieves daily aggregated metrics for power generation,
+/// consumption, buying, selling, hot water consumption, and gas consumption.
+/// It runs on a 60-second interval and fetches data for the current day.
 pub struct DailyTotalMetricCollector {
     client: Arc<Client>,
 }
 
 impl DailyTotalMetricCollector {
+    /// Creates a new instance of DailyTotalMetricCollector.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `client` - Shared AiSEG2 client for making HTTP requests
     pub fn new(client: Arc<Client>) -> Self {
         Self { client }
     }
 
+    /// Collects a specific daily total metric by graph ID.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `date` - The date to collect metrics for (will be normalized to beginning of day)
+    /// * `graph_id` - The AiSEG2 graph ID for the specific metric type
+    /// * `unit` - The unit of measurement for the metric
+    /// 
+    /// # Returns
+    /// 
+    /// A PowerTotalMetric containing the collected data or an error if collection fails
     async fn collect_by_graph_id(
         &self,
         date: DateTime<Local>,
@@ -47,6 +68,23 @@ impl DailyTotalMetricCollector {
 }
 
 impl MetricCollector for DailyTotalMetricCollector {
+    /// Collects all daily total metrics for the given timestamp.
+    /// 
+    /// Fetches the following metrics from AiSEG2:
+    /// - Graph ID 51111: Daily total power generation (kWh)
+    /// - Graph ID 52111: Daily total power consumption (kWh)
+    /// - Graph ID 53111: Daily total power buying (kWh)
+    /// - Graph ID 54111: Daily total power selling (kWh)
+    /// - Graph ID 55111: Daily total hot water consumption (L)
+    /// - Graph ID 57111: Daily total gas consumption (㎥)
+    /// 
+    /// # Arguments
+    /// 
+    /// * `timestamp` - The timestamp for collection (normalized to beginning of day)
+    /// 
+    /// # Returns
+    /// 
+    /// A vector of DataPointBuilder instances or an error if any collection fails
     fn collect<'a>(
         &'a self,
         timestamp: DateTime<Local>,
@@ -79,8 +117,23 @@ impl MetricCollector for DailyTotalMetricCollector {
     }
 }
 
-// makeDataQuery is base64 encoded JSON string
-// ex: {"day":[2024,6,6],"month_compare":"mon","day_compare":"day"}
+/// Creates a base64-encoded query string for AiSEG2 daily total requests.
+/// 
+/// The query is a JSON object containing the date and comparison settings,
+/// encoded in base64 format as required by the AiSEG2 API.
+/// 
+/// # Arguments
+/// 
+/// * `date` - The date to query for
+/// 
+/// # Returns
+/// 
+/// A base64-encoded string of the JSON query
+/// 
+/// # Example
+/// 
+/// For date 2024-06-06, returns base64 encoding of:
+/// `{"day":[2024,6,6],"month_compare":"mon","day_compare":"day"}`
 fn make_query(date: DateTime<Local>) -> String {
     let query = format!(
         r#"{{"day":[{}, {}, {}],"month_compare":"mon","day_compare":"day"}}"#,

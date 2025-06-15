@@ -5,3 +5,4 @@
 .influxdbv2
 .grafana
 .direnv
+.claude

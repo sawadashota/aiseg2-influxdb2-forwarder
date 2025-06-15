@@ -35,8 +35,8 @@ impl PowerMetricCollector {
     }
 
     fn collect_total_metrics(&self, document: &Html) -> Result<Vec<Box<dyn DataPointBuilder>>> {
-        let generation = f64_kw_to_i64_watt(parse_f64_from_html(&document, "#g_capacity")?);
-        let consumption = f64_kw_to_i64_watt(parse_f64_from_html(&document, "#u_capacity")?);
+        let generation = f64_kw_to_i64_watt(parse_f64_from_html(document, "#g_capacity")?);
+        let consumption = f64_kw_to_i64_watt(parse_f64_from_html(document, "#u_capacity")?);
 
         Ok(vec![
             Box::new(PowerStatusMetric {
@@ -63,12 +63,12 @@ impl PowerMetricCollector {
     ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
         let mut res: Vec<Box<dyn DataPointBuilder>> = vec![];
         for i in 1..=4 {
-            let name = match parse_text_from_html(&document, &format!("#g_d_{}_title", i)) {
+            let name = match parse_text_from_html(document, &format!("#g_d_{}_title", i)) {
                 Ok(name) => name,
                 Err(_) => break,
             };
             let value = f64_to_i64(parse_f64_from_html(
-                &document,
+                document,
                 &format!("#g_d_{}_capacity", i),
             )?);
             res.push(Box::new(PowerStatusBreakdownMetric {

@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use envy;
 use serde_derive::Deserialize;
 use std::str::FromStr;
 

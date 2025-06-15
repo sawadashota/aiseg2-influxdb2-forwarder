@@ -28,12 +28,12 @@ pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64> {
         .next()
         .context("Failed to find value")?;
     let inner_text = element.text().next().context("Failed to get text")?;
-    Ok(inner_text
+    inner_text
         .chars()
         .filter(|c| c.is_numeric() || c == &'.')
         .collect::<String>()
         .parse::<f64>()
-        .context("Failed to parse value")?)
+        .context("Failed to parse value")
 }
 
 pub fn day_of_beginning(date: &DateTime<Local>) -> DateTime<Local> {

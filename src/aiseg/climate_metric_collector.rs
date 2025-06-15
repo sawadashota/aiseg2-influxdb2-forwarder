@@ -109,25 +109,6 @@ fn parse(
 }
 
 fn extract_num_from_html_class(elements: scraper::element_ref::Select) -> Result<f64> {
-    // let digits: String = elements
-    //     .take(3)
-    //     .map(|element| {
-    //         element
-    //             .attr("class")
-    //             .and_then(|class| class.chars().find(|c| c.is_numeric()))
-    //             .ok_or_else(|| anyhow!("Failed to extract digit from class"))
-    //     })
-    //     .collect::<Result<Vec<char>>>()?
-    //     .into_iter()
-    //     .collect();
-    //
-    // if digits.len() != 3 {
-    //     return Err(anyhow!("Expected 3 digits but found {}", digits.len()));
-    // }
-    //
-    // // Insert decimal point after first two digits: "123" -> "12.3"
-    // let number_str = format!("{}.{}", &digits[..2], &digits[2..]);
-    // number_str.parse::<f64>().context("Failed to parse value")
     let mut chars: [char; 4] = ['0', '0', '.', '0'];
     let mut i = 0;
     let mut element_count = 0;
@@ -338,12 +319,17 @@ mod tests {
 
         #[test]
         fn test_extract_num_from_html_class_various_values() {
+            // The function expects 4 elements but only uses the first 3:
+            // Element 0 -> position 0 (tens digit)
+            // Element 1 -> position 1 (ones digit)  
+            // Element 2 -> position 3 (decimal digit) - skips position 2 which has '.'
+            // Element 3 -> not used but required for validation
             let test_cases = vec![
-                (vec!["0", "0", "0", "0"], 0.0),
-                (vec!["2", "5", "5", "0"], 25.5),
-                (vec!["9", "9", "9", "0"], 99.9),
-                (vec!["0", "1", "2", "0"], 1.2),
-                (vec!["5", "0", "0", "0"], 50.0),
+                (vec!["0", "0", "0", "0"], 0.0),   // "00.0"
+                (vec!["2", "5", "5", "0"], 25.5),  // "25.5"
+                (vec!["9", "9", "9", "0"], 99.9),  // "99.9"
+                (vec!["0", "1", "2", "0"], 1.2),   // "01.2"
+                (vec!["5", "0", "0", "0"], 50.0),  // "50.0"
             ];
 
             for (digits, expected) in test_cases {
@@ -363,8 +349,8 @@ mod tests {
                 let elements = wrapper_element.select(&span_selector);
 
                 let result = extract_num_from_html_class(elements);
-                assert!(result.is_ok());
-                assert_eq!(result.unwrap(), expected);
+                assert!(result.is_ok(), "Failed for input {:?}", digits);
+                assert_eq!(result.unwrap(), expected, "Failed for input {:?}", digits);
             }
         }
 
@@ -519,6 +505,7 @@ mod tests {
 
         #[test]
         fn test_extract_num_from_html_class_valid_input() {
+            // Function expects 4 elements but only uses first 3: [0]='2', [1]='3', skip, [3]='4'
             let html = r#"
                 <div id="wrapper">
                     <span class="num2"></span>
@@ -536,7 +523,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 23.4);  // Formats as "23.40"
+            assert_eq!(result.unwrap(), 23.4);  // Formats as "23.4"
         }
 
         #[test]
@@ -558,7 +545,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 0.0);  // Formats as "00.00"
+            assert_eq!(result.unwrap(), 0.0);  // Formats as "00.0"
         }
 
         #[test]
@@ -580,7 +567,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 98.7);  // Formats as "98.70"
+            assert_eq!(result.unwrap(), 98.7);  // Formats as "98.7"
         }
 
         #[test]
@@ -602,7 +589,7 @@ mod tests {
             let result = extract_num_from_html_class(elements);
 
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.30"
+            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.3"
         }
 
         #[test]
@@ -673,9 +660,9 @@ mod tests {
 
             let result = extract_num_from_html_class(elements);
 
-            // The function should only process the first 4 elements
+            // The function should only process the first 4 elements (but only uses first 3)
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.30"
+            assert_eq!(result.unwrap(), 12.3);  // Formats as "12.3"
         }
 
         #[test]

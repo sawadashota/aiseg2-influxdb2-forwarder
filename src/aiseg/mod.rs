@@ -3,6 +3,8 @@ mod client;
 mod daily_total_metric_collector;
 mod helper;
 #[cfg(test)]
+mod test_helpers;
+#[cfg(test)]
 mod test_utils;
 
 // New modular structure
@@ -10,7 +12,9 @@ mod collector_base;
 mod collectors;
 mod html_parsing;
 mod metrics;
+mod pagination;
 mod parsers;
+mod query_builder;
 
 // Re-export from new structure
 pub use collectors::{ClimateMetricCollector, PowerMetricCollector};

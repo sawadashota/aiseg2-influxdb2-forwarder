@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use scraper::Html;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -10,8 +9,17 @@ use std::sync::Arc;
 use crate::aiseg::client::Client;
 use crate::aiseg::collector_base::CollectorBase;
 use crate::aiseg::metrics::climate::climate_metrics_to_builders;
+use crate::aiseg::pagination::{PageItem, PaginatorBuilder};
 use crate::aiseg::parsers::climate_parser::parse_climate_page;
-use crate::model::{DataPointBuilder, MetricCollector};
+use crate::model::{ClimateStatusMetric, DataPointBuilder, MetricCollector};
+
+// Implement PageItem for ClimateStatusMetric to support pagination
+impl PageItem for ClimateStatusMetric {
+    fn dedup_key(&self) -> String {
+        // Use location name and metric type as the key
+        format!("{}-{}", self.name, self.category)
+    }
+}
 
 /// Collector for climate metrics (temperature and humidity) from AiSEG2.
 ///
@@ -40,26 +48,22 @@ impl MetricCollector for ClimateMetricCollector {
         timestamp: DateTime<Local>,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
         Box::pin(async move {
-            let mut all_metrics = Vec::new();
+            let client = Arc::clone(&self.client);
 
-            // Iterate through pages
-            for page in 1..=20 {
-                let response = self
-                    .fetch_page(&format!("/page/airenvironment/41?page={}", page))
-                    .await?;
-                let document = Html::parse_document(&response);
+            let paginator = PaginatorBuilder::new()
+                .max_pages(20)
+                .fetch_with(move |page| {
+                    let client = Arc::clone(&client);
+                    Box::pin(async move {
+                        client
+                            .get(&format!("/page/airenvironment/41?page={}", page))
+                            .await
+                    })
+                })
+                .parse_with(move |document| parse_climate_page(document, timestamp))
+                .build()?;
 
-                match parse_climate_page(&document, timestamp) {
-                    Ok(page_metrics) => {
-                        if page_metrics.is_empty() {
-                            break; // No more data
-                        }
-                        all_metrics.extend(page_metrics);
-                    }
-                    Err(_) => break, // Parsing error, likely no more pages
-                }
-            }
-
+            let all_metrics = paginator.collect_all().await?;
             Ok(climate_metrics_to_builders(all_metrics))
         })
     }

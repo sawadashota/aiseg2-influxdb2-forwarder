@@ -13,10 +13,19 @@ use crate::aiseg::metrics::power::{
     create_consumption_metrics, create_generation_metrics, create_total_power_metrics,
     merge_power_breakdown_metrics,
 };
+use crate::aiseg::pagination::{PageItem, PaginatorBuilder};
 use crate::aiseg::parsers::power_parser::{
-    has_duplicate_device_names, parse_consumption_page, parse_generation_sources, parse_total_power,
+    parse_consumption_page, parse_generation_sources, parse_total_power,
 };
-use crate::model::{DataPointBuilder, MetricCollector};
+use crate::model::{DataPointBuilder, MetricCollector, PowerStatusBreakdownMetric};
+
+// Implement PageItem for PowerStatusBreakdownMetric to support pagination
+impl PageItem for PowerStatusBreakdownMetric {
+    fn dedup_key(&self) -> String {
+        // Use the device name as the key for detecting duplicate pages
+        self.name.clone()
+    }
+}
 
 /// Collector for real-time power metrics from AiSEG2.
 ///
@@ -52,29 +61,22 @@ impl PowerMetricCollector {
 
     /// Collects consumption metrics from paginated detail pages.
     async fn collect_consumption_metrics(&self) -> MetricResult {
-        let mut all_items = Vec::new();
-        let mut last_page_items = Vec::new();
+        let client = Arc::clone(&self.client);
 
-        for page in 1..=20 {
-            let response = self
-                .fetch_page(&format!("/page/electricflow/1113?id={}", page))
-                .await?;
-            let document = Html::parse_document(&response);
+        let paginator = PaginatorBuilder::new()
+            .max_pages(20)
+            .fetch_with(move |page| {
+                let client = Arc::clone(&client);
+                Box::pin(async move {
+                    client
+                        .get(&format!("/page/electricflow/1113?id={}", page))
+                        .await
+                })
+            })
+            .parse_with(parse_consumption_page)
+            .build()?;
 
-            let page_items = parse_consumption_page(&document)?;
-
-            // Check for duplicate names indicating end of pagination
-            if has_duplicate_device_names(&last_page_items, &page_items) {
-                break;
-            }
-
-            if page_items.is_empty() {
-                break;
-            }
-
-            last_page_items = page_items.clone();
-            all_items.extend(page_items);
-        }
+        let all_items = paginator.collect_all().await?;
 
         // Merge duplicates and convert to metrics
         let merged = merge_power_breakdown_metrics(all_items);

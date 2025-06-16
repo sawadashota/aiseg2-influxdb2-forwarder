@@ -1,9 +1,10 @@
 use crate::aiseg::client::Client;
-use crate::aiseg::helper::{day_of_beginning, parse_f64_from_html, parse_text_from_html};
+use crate::aiseg::helper::day_of_beginning;
+use crate::aiseg::html_parsing::parse_graph_page;
+use crate::aiseg::query_builder::make_daily_total_query;
 use crate::model::{DataPointBuilder, Measurement, MetricCollector, PowerTotalMetric, Unit};
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use chrono::{DateTime, Datelike, Local};
+use chrono::{DateTime, Local};
 use scraper::Html;
 use std::future::Future;
 use std::pin::Pin;
@@ -51,12 +52,17 @@ impl DailyTotalMetricCollector {
             .get(&format!(
                 "/page/graph/{}?data={}",
                 graph_id,
-                make_query(the_day)
+                make_daily_total_query(the_day)
             ))
             .await?;
         let document = Html::parse_document(&response);
-        let name = parse_text_from_html(&document, "#h_title")?;
-        let value = parse_f64_from_html(&document, "#val_kwh")?;
+
+        // Use the new parse_graph_page utility
+        let (name, _watts_value) = parse_graph_page(&document, None, None)?;
+        // For daily totals, we need the kWh value, not watts
+        // So we'll use the extract_value function directly
+        use crate::aiseg::html_parsing::extract_value;
+        let value: f64 = extract_value(&document, "#val_kwh")?;
 
         Ok(PowerTotalMetric {
             measurement: Measurement::DailyTotal,
@@ -117,36 +123,10 @@ impl MetricCollector for DailyTotalMetricCollector {
     }
 }
 
-/// Creates a base64-encoded query string for AiSEG2 daily total requests.
-///
-/// The query is a JSON object containing the date and comparison settings,
-/// encoded in base64 format as required by the AiSEG2 API.
-///
-/// # Arguments
-///
-/// * `date` - The date to query for
-///
-/// # Returns
-///
-/// A base64-encoded string of the JSON query
-///
-/// # Example
-///
-/// For date 2024-06-06, returns base64 encoding of:
-/// `{"day":[2024,6,6],"month_compare":"mon","day_compare":"day"}`
-fn make_query(date: DateTime<Local>) -> String {
-    let query = format!(
-        r#"{{"day":[{}, {}, {}],"month_compare":"mon","day_compare":"day"}}"#,
-        date.year(),
-        date.month(),
-        date.day(),
-    );
-    STANDARD.encode(query)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aiseg::query_builder::make_daily_total_query;
     use crate::aiseg::test_utils::test_config;
     use chrono::TimeZone;
 
@@ -160,40 +140,6 @@ mod tests {
         )
     }
 
-    #[test]
-    fn test_make_query() {
-        let date = Local.with_ymd_and_hms(2024, 6, 6, 10, 30, 0).unwrap();
-        let query = make_query(date);
-
-        // Decode the base64 to verify the JSON content
-        let decoded = String::from_utf8(STANDARD.decode(&query).unwrap()).unwrap();
-        let expected = r#"{"day":[2024, 6, 6],"month_compare":"mon","day_compare":"day"}"#;
-        assert_eq!(decoded, expected);
-    }
-
-    #[test]
-    fn test_make_query_handles_different_dates() {
-        // Test leap year date
-        let date1 = Local.with_ymd_and_hms(2024, 2, 29, 0, 0, 0).unwrap();
-        let query1 = make_query(date1);
-        let decoded1 = String::from_utf8(STANDARD.decode(&query1).unwrap()).unwrap();
-        assert!(decoded1.contains(r#""day":[2024, 2, 29]"#));
-        assert!(decoded1.contains(r#""month_compare":"mon"#));
-        assert!(decoded1.contains(r#""day_compare":"day"#));
-
-        // Test beginning of year
-        let date2 = Local.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
-        let query2 = make_query(date2);
-        let decoded2 = String::from_utf8(STANDARD.decode(&query2).unwrap()).unwrap();
-        assert!(decoded2.contains(r#""day":[2024, 1, 1]"#));
-
-        // Test end of year
-        let date3 = Local.with_ymd_and_hms(2023, 12, 31, 23, 59, 59).unwrap();
-        let query3 = make_query(date3);
-        let decoded3 = String::from_utf8(STANDARD.decode(&query3).unwrap()).unwrap();
-        assert!(decoded3.contains(r#""day":[2023, 12, 31]"#));
-    }
-
     mod succeeds {
         use super::*;
 
@@ -203,7 +149,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local.with_ymd_and_hms(2024, 6, 6, 10, 0, 0).unwrap();
-            let expected_query = make_query(day_of_beginning(&date).unwrap());
+            let expected_query = make_daily_total_query(day_of_beginning(&date).unwrap());
 
             let _mock = server
                 .mock(
@@ -238,7 +184,7 @@ mod tests {
 
             let date = Local.with_ymd_and_hms(2024, 6, 6, 15, 30, 45).unwrap();
             let expected_date = day_of_beginning(&date).unwrap();
-            let expected_query = make_query(expected_date);
+            let expected_query = make_daily_total_query(expected_date);
 
             let _mock = server
                 .mock(
@@ -272,7 +218,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date).unwrap());
+            let expected_query = make_daily_total_query(day_of_beginning(&date).unwrap());
 
             // Test kWh unit
             let _mock1 = server
@@ -345,7 +291,7 @@ mod tests {
 
             let date = Local::now();
             let expected_date = day_of_beginning(&date).unwrap();
-            let expected_query = make_query(expected_date);
+            let expected_query = make_daily_total_query(expected_date);
 
             // Mock all six metric responses
             let metrics = vec![
@@ -392,7 +338,7 @@ mod tests {
 
             let date = Local::now();
             let expected_date = day_of_beginning(&date).unwrap();
-            let expected_query = make_query(expected_date);
+            let expected_query = make_daily_total_query(expected_date);
 
             // Mock responses with different values including edge cases
             let _mock1 = server
@@ -476,7 +422,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date).unwrap());
+            let expected_query = make_daily_total_query(day_of_beginning(&date).unwrap());
 
             // HTML without #h_title element
             let html_without_title = r#"<html><body><div id="val_kwh">123.45</div></body></html>"#;
@@ -503,7 +449,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to find value"));
+                .contains("Element not found"));
         }
 
         #[tokio::test]
@@ -512,7 +458,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date).unwrap());
+            let expected_query = make_daily_total_query(day_of_beginning(&date).unwrap());
 
             // HTML without #val_kwh element
             let html_without_val =
@@ -540,7 +486,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to find value"));
+                .contains("Element not found"));
         }
 
         #[tokio::test]
@@ -549,7 +495,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date).unwrap());
+            let expected_query = make_daily_total_query(day_of_beginning(&date).unwrap());
 
             // HTML with non-numeric value
             let _mock = server
@@ -571,10 +517,7 @@ mod tests {
                 .await;
 
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to parse value"));
+            assert!(result.unwrap_err().to_string().contains("Failed to parse"));
         }
 
         #[tokio::test]
@@ -583,7 +526,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date).unwrap());
+            let expected_query = make_daily_total_query(day_of_beginning(&date).unwrap());
 
             let _mock = server
                 .mock(
@@ -617,7 +560,7 @@ mod tests {
 
             let date = Local::now();
             let expected_date = day_of_beginning(&date).unwrap();
-            let expected_query = make_query(expected_date);
+            let expected_query = make_daily_total_query(expected_date);
 
             // First five metrics succeed
             let success_metrics = vec![
@@ -668,7 +611,7 @@ mod tests {
 
             let date = Local::now();
             let expected_date = day_of_beginning(&date).unwrap();
-            let expected_query = make_query(expected_date);
+            let expected_query = make_daily_total_query(expected_date);
 
             // All metrics return errors
             let graph_ids = vec!["51111", "52111", "53111", "54111", "55111", "57111"];

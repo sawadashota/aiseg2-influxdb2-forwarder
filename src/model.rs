@@ -79,7 +79,7 @@ impl DataPointBuilder for PowerStatusMetric {
 /// Used for component-level power metrics that show individual
 /// sources of generation or consumption (e.g., solar panels,
 /// specific appliances).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PowerStatusBreakdownMetric {
     /// The measurement type (should be Measurement::Power)
     pub measurement: Measurement,
@@ -165,7 +165,7 @@ impl DataPointBuilder for PowerTotalMetric {
 ///
 /// Used for room-specific temperature and humidity readings
 /// from AiSEG2's climate monitoring sensors.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClimateStatusMetric {
     /// The measurement type (should be Measurement::Climate)
     pub measurement: Measurement,
@@ -183,7 +183,7 @@ pub struct ClimateStatusMetric {
 ///
 /// Distinguishes between different types of environmental
 /// measurements from climate sensors.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ClimateStatusMetricCategory {
     /// Temperature in degrees Celsius
     Temperature,

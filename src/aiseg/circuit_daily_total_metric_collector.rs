@@ -1,9 +1,10 @@
 use crate::aiseg::client::Client;
-use crate::aiseg::helper::{day_of_beginning, parse_f64_from_html};
+use crate::aiseg::helper::day_of_beginning;
+use crate::aiseg::html_parsing::extract_value;
+use crate::aiseg::query_builder::make_circuit_query;
 use crate::model::{DataPointBuilder, Measurement, MetricCollector, PowerTotalMetric, Unit};
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use chrono::{DateTime, Datelike, Local};
+use chrono::{DateTime, Local};
 use scraper::Html;
 use std::future::Future;
 use std::pin::Pin;
@@ -62,11 +63,14 @@ impl CircuitDailyTotalMetricCollector {
             .client
             .get(&format!(
                 "/page/graph/584?data={}",
-                make_query(circuit_id, the_day)
+                make_circuit_query(circuit_id, the_day)
             ))
             .await?;
         let document = Html::parse_document(&response);
-        let value = parse_f64_from_html(&document, "#val_kwh")?;
+
+        // Use the new extract_value utility
+        let value: f64 = extract_value(&document, "#val_kwh")?;
+
         Ok(PowerTotalMetric {
             measurement: Measurement::CircuitDailyTotal,
             name: format!("{}({})", name, unit),
@@ -118,40 +122,10 @@ impl MetricCollector for CircuitDailyTotalMetricCollector {
     }
 }
 
-/// Creates a base64-encoded query string for circuit-specific daily totals.
-///
-/// The AiSEG2 circuit API requires a more complex query format than the
-/// general daily totals, including term formatting and circuit ID specification.
-///
-/// # Arguments
-///
-/// * `circuit_id` - The specific circuit ID to query (e.g., "30" for EV)
-/// * `date` - The date to query for
-///
-/// # Returns
-///
-/// A base64-encoded string of the JSON query
-///
-/// # Example JSON (before encoding)
-///
-/// ```json
-/// {"day":[2024,6,8],"term":"2024/06/08","termStr":"day","id":"1","circuitid":"30"}
-/// ```
-fn make_query(circuit_id: &str, date: DateTime<Local>) -> String {
-    let query = format!(
-        r#"{{"day":[{}, {}, {}],"term":"{}","termStr":"day","id":"1","circuitid":"{}"}}"#,
-        date.year(),
-        date.month(),
-        date.day(),
-        date.format("%Y/%m/%d"),
-        circuit_id,
-    );
-    STANDARD.encode(query)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aiseg::query_builder::make_circuit_query;
     use crate::aiseg::test_utils::test_config;
     use chrono::TimeZone;
 
@@ -160,35 +134,6 @@ mod tests {
             r#"<html><body><div id="val_kwh">{}</div></body></html>"#,
             value
         )
-    }
-
-    #[test]
-    fn test_make_query() {
-        let date = Local.with_ymd_and_hms(2024, 6, 8, 10, 30, 0).unwrap();
-        let query = make_query("30", date);
-
-        // Decode the base64 to verify the JSON content
-        let decoded = String::from_utf8(STANDARD.decode(&query).unwrap()).unwrap();
-        let expected =
-            r#"{"day":[2024, 6, 8],"term":"2024/06/08","termStr":"day","id":"1","circuitid":"30"}"#;
-        assert_eq!(decoded, expected);
-    }
-
-    #[test]
-    fn test_make_query_handles_different_dates() {
-        // Test leap year date
-        let date1 = Local.with_ymd_and_hms(2024, 2, 29, 0, 0, 0).unwrap();
-        let query1 = make_query("25", date1);
-        let decoded1 = String::from_utf8(STANDARD.decode(&query1).unwrap()).unwrap();
-        assert!(decoded1.contains(r#""day":[2024, 2, 29]"#));
-        assert!(decoded1.contains(r#""term":"2024/02/29""#));
-
-        // Test end of year
-        let date2 = Local.with_ymd_and_hms(2023, 12, 31, 23, 59, 59).unwrap();
-        let query2 = make_query("27", date2);
-        let decoded2 = String::from_utf8(STANDARD.decode(&query2).unwrap()).unwrap();
-        assert!(decoded2.contains(r#""day":[2023, 12, 31]"#));
-        assert!(decoded2.contains(r#""term":"2023/12/31""#));
     }
 
     mod succeeds {
@@ -200,7 +145,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local.with_ymd_and_hms(2024, 6, 8, 10, 0, 0).unwrap();
-            let expected_query = make_query("30", day_of_beginning(&date).unwrap());
+            let expected_query = make_circuit_query("30", day_of_beginning(&date).unwrap());
 
             let _mock = server
                 .mock(
@@ -234,7 +179,7 @@ mod tests {
 
             let date = Local.with_ymd_and_hms(2024, 6, 8, 15, 30, 45).unwrap();
             let expected_date = day_of_beginning(&date).unwrap();
-            let expected_query = make_query("27", expected_date);
+            let expected_query = make_circuit_query("27", expected_date);
 
             let _mock = server
                 .mock(
@@ -276,7 +221,7 @@ mod tests {
 
             for (html_value, expected_value) in test_cases {
                 let date = Local::now();
-                let expected_query = make_query("25", day_of_beginning(&date).unwrap());
+                let expected_query = make_circuit_query("25", day_of_beginning(&date).unwrap());
 
                 let _mock = server
                     .mock(
@@ -318,7 +263,7 @@ mod tests {
             ];
 
             for (circuit_id, value) in &circuits {
-                let expected_query = make_query(circuit_id, expected_date);
+                let expected_query = make_circuit_query(circuit_id, expected_date);
                 let _mock = server
                     .mock(
                         "GET",
@@ -358,7 +303,11 @@ mod tests {
             let _mock1 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("30", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("30", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(200)
                 .with_body(create_html_response("0.0"))
@@ -368,7 +317,11 @@ mod tests {
             let _mock2 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("27", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("27", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(200)
                 .with_body(create_html_response("999.99"))
@@ -378,7 +331,11 @@ mod tests {
             let _mock3 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("26", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("26", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(200)
                 .with_body(create_html_response("50.5"))
@@ -388,7 +345,11 @@ mod tests {
             let _mock4 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("25", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("25", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(200)
                 .with_body(create_html_response("1.23"))
@@ -416,7 +377,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query("30", day_of_beginning(&date).unwrap());
+            let expected_query = make_circuit_query("30", day_of_beginning(&date).unwrap());
 
             // HTML without #val_kwh element
             let html_without_val_kwh = r#"<html><body><div>No value here</div></body></html>"#;
@@ -443,7 +404,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to find value"));
+                .contains("Element not found"));
         }
 
         #[tokio::test]
@@ -452,7 +413,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query("30", day_of_beginning(&date).unwrap());
+            let expected_query = make_circuit_query("30", day_of_beginning(&date).unwrap());
 
             // HTML with non-numeric value
             let _mock = server
@@ -474,10 +435,7 @@ mod tests {
                 .await;
 
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to parse value"));
+            assert!(result.unwrap_err().to_string().contains("Failed to parse"));
         }
 
         #[tokio::test]
@@ -486,7 +444,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query("30", day_of_beginning(&date).unwrap());
+            let expected_query = make_circuit_query("30", day_of_beginning(&date).unwrap());
 
             let _mock = server
                 .mock(
@@ -525,7 +483,11 @@ mod tests {
             let _mock1 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("30", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("30", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(200)
                 .with_body(create_html_response("100.0"))
@@ -535,7 +497,11 @@ mod tests {
             let _mock2 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("27", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("27", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(200)
                 .with_body(create_html_response("200.0"))
@@ -545,7 +511,11 @@ mod tests {
             let _mock3 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("26", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("26", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(200)
                 .with_body(create_html_response("300.0"))
@@ -556,7 +526,11 @@ mod tests {
             let _mock4 = server
                 .mock(
                     "GET",
-                    format!("/page/graph/584?data={}", make_query("25", expected_date)).as_str(),
+                    format!(
+                        "/page/graph/584?data={}",
+                        make_circuit_query("25", expected_date)
+                    )
+                    .as_str(),
                 )
                 .with_status(404)
                 .with_body("Not Found")
@@ -585,7 +559,7 @@ mod tests {
             let circuits = vec!["30", "27", "26", "25"];
 
             for circuit_id in circuits {
-                let expected_query = make_query(circuit_id, expected_date);
+                let expected_query = make_circuit_query(circuit_id, expected_date);
                 let _mock = server
                     .mock(
                         "GET",

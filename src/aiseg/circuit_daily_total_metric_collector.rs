@@ -4,10 +4,9 @@ use crate::aiseg::html_parsing::extract_value;
 use crate::aiseg::query_builder::make_circuit_query;
 use crate::model::{DataPointBuilder, Measurement, MetricCollector, PowerTotalMetric, Unit};
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use scraper::Html;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 /// Collector for individual circuit daily total power consumption metrics.
@@ -80,6 +79,7 @@ impl CircuitDailyTotalMetricCollector {
     }
 }
 
+#[async_trait]
 impl MetricCollector for CircuitDailyTotalMetricCollector {
     /// Collects daily total metrics for all monitored circuits.
     ///
@@ -100,25 +100,20 @@ impl MetricCollector for CircuitDailyTotalMetricCollector {
     ///
     /// A vector of DataPointBuilder instances for all circuits, or an error
     /// if any circuit data collection fails
-    fn collect<'a>(
-        &'a self,
-        timestamp: DateTime<Local>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + 'a + Send>> {
-        Box::pin(async move {
-            Ok(vec![
-                self.collect_by_circuit_id(timestamp, "EV", "30", Unit::Kwh)
-                    .await?,
-                self.collect_by_circuit_id(timestamp, "リビングエアコン", "27", Unit::Kwh)
-                    .await?,
-                self.collect_by_circuit_id(timestamp, "主寝室エアコン", "26", Unit::Kwh)
-                    .await?,
-                self.collect_by_circuit_id(timestamp, "洋室２エアコン", "25", Unit::Kwh)
-                    .await?,
-            ]
-            .into_iter()
-            .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
-            .collect())
-        })
+    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+        Ok(vec![
+            self.collect_by_circuit_id(timestamp, "EV", "30", Unit::Kwh)
+                .await?,
+            self.collect_by_circuit_id(timestamp, "リビングエアコン", "27", Unit::Kwh)
+                .await?,
+            self.collect_by_circuit_id(timestamp, "主寝室エアコン", "26", Unit::Kwh)
+                .await?,
+            self.collect_by_circuit_id(timestamp, "洋室２エアコン", "25", Unit::Kwh)
+                .await?,
+        ]
+        .into_iter()
+        .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
+        .collect())
     }
 }
 

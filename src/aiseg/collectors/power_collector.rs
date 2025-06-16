@@ -1,10 +1,9 @@
 //! Power metric collector implementation.
 
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use scraper::Html;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::aiseg::client::Client;
@@ -95,22 +94,18 @@ impl CollectorBase for PowerMetricCollector {
     }
 }
 
+#[async_trait]
 impl MetricCollector for PowerMetricCollector {
-    fn collect<'a>(
-        &'a self,
-        _timestamp: DateTime<Local>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
-        Box::pin(async move {
-            let mut all_metrics = Vec::new();
+    async fn collect(&self, _timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+        let mut all_metrics = Vec::new();
 
-            // Collect from main page
-            all_metrics.extend(self.collect_from_main_page().await?);
+        // Collect from main page
+        all_metrics.extend(self.collect_from_main_page().await?);
 
-            // Collect consumption details
-            all_metrics.extend(self.collect_consumption_metrics().await?);
+        // Collect consumption details
+        all_metrics.extend(self.collect_consumption_metrics().await?);
 
-            Ok(all_metrics)
-        })
+        Ok(all_metrics)
     }
 }
 

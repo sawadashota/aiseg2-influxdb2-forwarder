@@ -4,10 +4,9 @@ use crate::aiseg::html_parsing::parse_graph_page;
 use crate::aiseg::query_builder::make_daily_total_query;
 use crate::model::{DataPointBuilder, Measurement, MetricCollector, PowerTotalMetric, Unit};
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use scraper::Html;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 /// Collector for daily total metrics from AiSEG2 system.
@@ -73,6 +72,7 @@ impl DailyTotalMetricCollector {
     }
 }
 
+#[async_trait]
 impl MetricCollector for DailyTotalMetricCollector {
     /// Collects all daily total metrics for the given timestamp.
     ///
@@ -91,35 +91,30 @@ impl MetricCollector for DailyTotalMetricCollector {
     /// # Returns
     ///
     /// A vector of DataPointBuilder instances or an error if any collection fails
-    fn collect<'a>(
-        &'a self,
-        timestamp: DateTime<Local>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
-        Box::pin(async move {
-            Ok(vec![
-                // DailyTotalPowerGeneration
-                self.collect_by_graph_id(timestamp, "51111", Unit::Kwh)
-                    .await?,
-                // DailyTotalPowerConsumption
-                self.collect_by_graph_id(timestamp, "52111", Unit::Kwh)
-                    .await?,
-                // DailyTotalPowerBuying
-                self.collect_by_graph_id(timestamp, "53111", Unit::Kwh)
-                    .await?,
-                // DailyTotalPowerSelling
-                self.collect_by_graph_id(timestamp, "54111", Unit::Kwh)
-                    .await?,
-                // DailyTotalHotWaterConsumption
-                self.collect_by_graph_id(timestamp, "55111", Unit::Liter)
-                    .await?,
-                // DailyTotalGasConsumption
-                self.collect_by_graph_id(timestamp, "57111", Unit::CubicMeter)
-                    .await?,
-            ]
-            .into_iter()
-            .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
-            .collect())
-        })
+    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+        Ok(vec![
+            // DailyTotalPowerGeneration
+            self.collect_by_graph_id(timestamp, "51111", Unit::Kwh)
+                .await?,
+            // DailyTotalPowerConsumption
+            self.collect_by_graph_id(timestamp, "52111", Unit::Kwh)
+                .await?,
+            // DailyTotalPowerBuying
+            self.collect_by_graph_id(timestamp, "53111", Unit::Kwh)
+                .await?,
+            // DailyTotalPowerSelling
+            self.collect_by_graph_id(timestamp, "54111", Unit::Kwh)
+                .await?,
+            // DailyTotalHotWaterConsumption
+            self.collect_by_graph_id(timestamp, "55111", Unit::Liter)
+                .await?,
+            // DailyTotalGasConsumption
+            self.collect_by_graph_id(timestamp, "57111", Unit::CubicMeter)
+                .await?,
+        ]
+        .into_iter()
+        .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
+        .collect())
     }
 }
 

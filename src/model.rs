@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use futures::future::join_all;
 use influxdb2::models::DataPoint;
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 
 /// Trait for types that can be converted to InfluxDB data points.
 ///
@@ -219,18 +218,12 @@ impl DataPointBuilder for ClimateStatusMetric {
     }
 }
 
-/// Type alias for the future returned by metric collectors.
-///
-/// This boxed future allows collectors to perform asynchronous operations
-/// (like HTTP requests) while maintaining a consistent interface.
-pub type CollectFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>;
-
 /// Trait for types that can collect metrics from AiSEG2.
 ///
 /// Implementors of this trait are responsible for fetching specific
 /// types of metrics from the AiSEG2 system. Each collector typically
 /// handles one category of metrics (power, climate, totals, etc.).
+#[async_trait]
 pub trait MetricCollector: Send + Sync {
     /// Collects metrics at the specified timestamp.
     ///
@@ -239,7 +232,7 @@ pub trait MetricCollector: Send + Sync {
     ///
     /// # Returns
     /// A future that resolves to a vector of DataPointBuilder instances
-    fn collect(&self, timestamp: DateTime<Local>) -> CollectFuture<'_>;
+    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>>;
 }
 
 /// Collects metrics from multiple collectors concurrently.
@@ -322,14 +315,14 @@ mod tests {
         create_metrics: fn() -> Vec<Box<dyn DataPointBuilder>>,
     }
 
+    #[async_trait]
     impl MetricCollector for MockSuccessCollector {
-        fn collect<'a>(
-            &'a self,
+        async fn collect(
+            &self,
             _timestamp: DateTime<Local>,
-        ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>
-        {
+        ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
             let metrics = (self.create_metrics)();
-            Box::pin(async move { Ok(metrics) })
+            Ok(metrics)
         }
     }
 
@@ -337,13 +330,13 @@ mod tests {
         error_message: String,
     }
 
+    #[async_trait]
     impl MetricCollector for MockFailureCollector {
-        fn collect<'a>(
-            &'a self,
+        async fn collect(
+            &self,
             _timestamp: DateTime<Local>,
-        ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>
-        {
-            Box::pin(async move { Err(anyhow!(self.error_message.clone())) })
+        ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+            Err(anyhow!(self.error_message.clone()))
         }
     }
 
@@ -550,22 +543,20 @@ mod tests {
             // Create a collector that returns both valid and failing metrics
             struct MixedCollector;
 
+            #[async_trait]
             impl MetricCollector for MixedCollector {
-                fn collect<'a>(
-                    &'a self,
+                async fn collect(
+                    &self,
                     _timestamp: DateTime<Local>,
-                ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>
-                {
-                    Box::pin(async move {
-                        Ok(vec![
-                            Box::new(PowerStatusMetric {
-                                measurement: Measurement::Power,
-                                name: "valid".to_string(),
-                                value: 100,
-                            }) as Box<dyn DataPointBuilder>,
-                            Box::new(FailingDataPointBuilder) as Box<dyn DataPointBuilder>,
-                        ])
-                    })
+                ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+                    Ok(vec![
+                        Box::new(PowerStatusMetric {
+                            measurement: Measurement::Power,
+                            name: "valid".to_string(),
+                            value: 100,
+                        }) as Box<dyn DataPointBuilder>,
+                        Box::new(FailingDataPointBuilder) as Box<dyn DataPointBuilder>,
+                    ])
                 }
             }
 

@@ -76,7 +76,7 @@ where
     use std::collections::HashMap;
 
     let mut seen = HashMap::new();
-    let mut result = Vec::new();
+    let mut result = Vec::with_capacity(metrics.len());
 
     for metric in metrics {
         let key = key_fn(&metric);

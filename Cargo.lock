@@ -31,6 +31,7 @@ name = "aiseg2-influxdb2-forwarder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "chrono",
  "diqwest",

@@ -1,9 +1,8 @@
 //! Climate metric collector implementation.
 
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::{DateTime, Local};
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::aiseg::client::Client;
@@ -42,30 +41,26 @@ impl CollectorBase for ClimateMetricCollector {
     }
 }
 
+#[async_trait]
 impl MetricCollector for ClimateMetricCollector {
-    fn collect<'a>(
-        &'a self,
-        timestamp: DateTime<Local>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>> {
-        Box::pin(async move {
-            let client = Arc::clone(&self.client);
+    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+        let client = Arc::clone(&self.client);
 
-            let paginator = PaginatorBuilder::new()
-                .max_pages(20)
-                .fetch_with(move |page| {
-                    let client = Arc::clone(&client);
-                    Box::pin(async move {
-                        client
-                            .get(&format!("/page/airenvironment/41?page={}", page))
-                            .await
-                    })
+        let paginator = PaginatorBuilder::new()
+            .max_pages(20)
+            .fetch_with(move |page| {
+                let client = Arc::clone(&client);
+                Box::pin(async move {
+                    client
+                        .get(&format!("/page/airenvironment/41?page={}", page))
+                        .await
                 })
-                .parse_with(move |document| parse_climate_page(document, timestamp))
-                .build()?;
+            })
+            .parse_with(move |document| parse_climate_page(document, timestamp))
+            .build()?;
 
-            let all_metrics = paginator.collect_all().await?;
-            Ok(climate_metrics_to_builders(all_metrics))
-        })
+        let all_metrics = paginator.collect_all().await?;
+        Ok(climate_metrics_to_builders(all_metrics))
     }
 }
 

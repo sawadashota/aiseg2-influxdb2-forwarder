@@ -277,9 +277,8 @@ mod tests {
     use crate::config::InfluxConfig;
     use crate::model::{DataPointBuilder, Measurement, PowerStatusMetric};
     use anyhow::anyhow;
+    use async_trait::async_trait;
     use chrono::{DateTime, Local};
-    use std::future::Future;
-    use std::pin::Pin;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use tokio::time::Duration;
@@ -295,25 +294,22 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl MetricCollector for MockMetricCollector {
-        fn collect<'a>(
-            &'a self,
+        async fn collect(
+            &self,
             _timestamp: DateTime<Local>,
-        ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<Box<dyn DataPointBuilder>>>> + Send + 'a>>
-        {
-            Box::pin(async move {
-                if self.should_fail {
-                    Err(anyhow!("Mock collection failed"))
-                } else {
-                    let metrics: Vec<Box<dyn DataPointBuilder>> =
-                        vec![Box::new(PowerStatusMetric {
-                            measurement: Measurement::Power,
-                            name: "test".to_string(),
-                            value: 100,
-                        })];
-                    Ok(metrics)
-                }
-            })
+        ) -> anyhow::Result<Vec<Box<dyn DataPointBuilder>>> {
+            if self.should_fail {
+                Err(anyhow!("Mock collection failed"))
+            } else {
+                let metrics: Vec<Box<dyn DataPointBuilder>> = vec![Box::new(PowerStatusMetric {
+                    measurement: Measurement::Power,
+                    name: "test".to_string(),
+                    value: 100,
+                })];
+                Ok(metrics)
+            }
         }
     }
 

@@ -73,7 +73,7 @@ impl PowerMetricCollector {
                         .await
                 })
             })
-            .parse_with(|document| parse_consumption_page(document))
+            .parse_with(parse_consumption_page)
             .build()?;
 
         let all_items = paginator.collect_all().await?;

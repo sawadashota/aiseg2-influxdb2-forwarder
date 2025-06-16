@@ -8,6 +8,14 @@ use scraper::Html;
 use std::future::Future;
 use std::pin::Pin;
 
+/// Type alias for the fetch function used in pagination.
+pub type FetchFn<'a> = Box<
+    dyn Fn(usize) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> + Send + Sync + 'a,
+>;
+
+/// Type alias for the parse function used in pagination.
+pub type ParseFn<'a, T> = Box<dyn Fn(&Html) -> Result<Vec<T>> + Send + Sync + 'a>;
+
 /// Configuration for pagination behavior.
 #[derive(Clone)]
 pub struct PaginationConfig {
@@ -36,13 +44,8 @@ pub trait PageItem: Clone + PartialEq {
 /// Generic paginator for collecting items across multiple pages.
 pub struct Paginator<'a, T> {
     config: PaginationConfig,
-    fetch_fn: Box<
-        dyn Fn(usize) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>
-            + Send
-            + Sync
-            + 'a,
-    >,
-    parse_fn: Box<dyn Fn(&Html) -> Result<Vec<T>> + Send + Sync + 'a>,
+    fetch_fn: FetchFn<'a>,
+    parse_fn: ParseFn<'a, T>,
 }
 
 impl<'a, T: PageItem> Paginator<'a, T> {
@@ -109,15 +112,8 @@ impl<'a, T: PageItem> Paginator<'a, T> {
 /// Helper builder for creating paginators with fluent API.
 pub struct PaginatorBuilder<'a, T> {
     config: PaginationConfig,
-    fetch_fn: Option<
-        Box<
-            dyn Fn(usize) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>
-                + Send
-                + Sync
-                + 'a,
-        >,
-    >,
-    parse_fn: Option<Box<dyn Fn(&Html) -> Result<Vec<T>> + Send + Sync + 'a>>,
+    fetch_fn: Option<FetchFn<'a>>,
+    parse_fn: Option<ParseFn<'a, T>>,
 }
 
 impl<'a, T: PageItem> PaginatorBuilder<'a, T> {

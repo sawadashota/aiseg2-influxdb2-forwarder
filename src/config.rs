@@ -60,6 +60,11 @@ fn default_total_initial_days() -> u64 {
     30
 }
 
+/// Default timeout for collector tasks in seconds (10 seconds).
+fn default_task_timeout_seconds() -> u64 {
+    10
+}
+
 /// Configuration for metric collection intervals and behavior.
 ///
 /// Controls how frequently different types of metrics are collected
@@ -82,6 +87,12 @@ pub struct CollectorConfig {
     /// Default: 30 days
     #[serde(default = "default_total_initial_days")]
     pub total_initial_days: u64,
+
+    /// Timeout for individual collector tasks in seconds
+    /// Prevents collector tasks from hanging indefinitely
+    /// Default: 10 seconds
+    #[serde(default = "default_task_timeout_seconds")]
+    pub task_timeout_seconds: u64,
 }
 
 /// Loads collector configuration from environment variables.
@@ -90,6 +101,7 @@ pub struct CollectorConfig {
 /// - `COLLECTOR_STATUS_INTERVAL_SEC`: Interval for status metrics (default: 5)
 /// - `COLLECTOR_TOTAL_INTERVAL_SEC`: Interval for total metrics (default: 60)
 /// - `COLLECTOR_TOTAL_INITIAL_DAYS`: Days of history to collect (default: 30)
+/// - `COLLECTOR_TASK_TIMEOUT_SECONDS`: Timeout for collector tasks (default: 10)
 ///
 /// # Returns
 /// - `Ok(CollectorConfig)` with loaded or default values
@@ -244,10 +256,12 @@ mod tests {
         let original_total = std::env::var("COLLECTOR_TOTAL_INTERVAL_SEC").ok();
         let original_status = std::env::var("COLLECTOR_STATUS_INTERVAL_SEC").ok();
         let original_days = std::env::var("COLLECTOR_TOTAL_INITIAL_DAYS").ok();
+        let original_timeout = std::env::var("COLLECTOR_TASK_TIMEOUT_SECONDS").ok();
 
         std::env::set_var("COLLECTOR_TOTAL_INTERVAL_SEC", "10");
         std::env::set_var("COLLECTOR_STATUS_INTERVAL_SEC", "20");
         std::env::set_var("COLLECTOR_TOTAL_INITIAL_DAYS", "30");
+        std::env::set_var("COLLECTOR_TASK_TIMEOUT_SECONDS", "15");
 
         let result = load_collector_config();
 
@@ -264,12 +278,17 @@ mod tests {
             Some(val) => std::env::set_var("COLLECTOR_TOTAL_INITIAL_DAYS", val),
             None => std::env::remove_var("COLLECTOR_TOTAL_INITIAL_DAYS"),
         }
+        match original_timeout {
+            Some(val) => std::env::set_var("COLLECTOR_TASK_TIMEOUT_SECONDS", val),
+            None => std::env::remove_var("COLLECTOR_TASK_TIMEOUT_SECONDS"),
+        }
 
         assert!(result.is_ok());
         let config = result.unwrap();
         assert_eq!(config.total_interval_sec, 10);
         assert_eq!(config.status_interval_sec, 20);
         assert_eq!(config.total_initial_days, 30);
+        assert_eq!(config.task_timeout_seconds, 15);
     }
 
     #[test]
@@ -281,6 +300,7 @@ mod tests {
         assert_eq!(config.status_interval_sec, 5);
         assert_eq!(config.total_interval_sec, 60);
         assert_eq!(config.total_initial_days, 30);
+        assert_eq!(config.task_timeout_seconds, 10);
     }
 
     #[test]

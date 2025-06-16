@@ -112,19 +112,11 @@ impl MetricCollector for PowerMetricCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Aiseg2Config;
-
-    fn test_config(url: String) -> Aiseg2Config {
-        Aiseg2Config {
-            url,
-            user: "test".to_string(),
-            password: "test".to_string(),
-        }
-    }
+    use crate::test_utils::config::test_aiseg2_config_with_url;
 
     #[tokio::test]
     async fn test_power_collector_creation() {
-        let config = test_config("http://localhost".to_string());
+        let config = test_aiseg2_config_with_url("http://localhost");
         let client = Arc::new(Client::new(config));
         let collector = PowerMetricCollector::new(client);
 

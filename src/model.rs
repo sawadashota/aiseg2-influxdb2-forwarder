@@ -302,6 +302,7 @@ impl fmt::Display for Unit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::mocks::MockMetricCollector;
     use chrono::TimeZone;
 
     // Helper function to create a test timestamp
@@ -309,36 +310,7 @@ mod tests {
         Local.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap()
     }
 
-    // Mock implementation of MetricCollector for testing
-    struct MockSuccessCollector {
-        // Return a function that creates metrics instead of storing them
-        create_metrics: fn() -> Vec<Box<dyn DataPointBuilder>>,
-    }
-
-    #[async_trait]
-    impl MetricCollector for MockSuccessCollector {
-        async fn collect(
-            &self,
-            _timestamp: DateTime<Local>,
-        ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
-            let metrics = (self.create_metrics)();
-            Ok(metrics)
-        }
-    }
-
-    struct MockFailureCollector {
-        error_message: String,
-    }
-
-    #[async_trait]
-    impl MetricCollector for MockFailureCollector {
-        async fn collect(
-            &self,
-            _timestamp: DateTime<Local>,
-        ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
-            Err(anyhow!(self.error_message.clone()))
-        }
-    }
+    // Mock implementations are now in test_utils::mocks
 
     // Mock DataPointBuilder that always fails
     #[derive(Clone)]
@@ -461,22 +433,20 @@ mod tests {
 
         #[tokio::test]
         async fn test_batch_collect_metrics_successful_collection() {
-            let collector = Box::new(MockSuccessCollector {
-                create_metrics: || {
-                    vec![
-                        Box::new(PowerStatusMetric {
-                            measurement: Measurement::Power,
-                            name: "test1".to_string(),
-                            value: 100,
-                        }),
-                        Box::new(PowerStatusMetric {
-                            measurement: Measurement::Power,
-                            name: "test2".to_string(),
-                            value: 200,
-                        }),
-                    ]
-                },
-            });
+            let collector = Box::new(MockMetricCollector::new_with_data(|| {
+                vec![
+                    Box::new(PowerStatusMetric {
+                        measurement: Measurement::Power,
+                        name: "test1".to_string(),
+                        value: 100,
+                    }),
+                    Box::new(PowerStatusMetric {
+                        measurement: Measurement::Power,
+                        name: "test2".to_string(),
+                        value: 200,
+                    }),
+                ]
+            }));
 
             let collectors: Vec<Box<dyn MetricCollector>> = vec![collector];
             let result = batch_collect_metrics(&collectors, test_timestamp()).await;
@@ -485,25 +455,21 @@ mod tests {
 
         #[tokio::test]
         async fn test_batch_collect_metrics_multiple_collectors() {
-            let collector1 = Box::new(MockSuccessCollector {
-                create_metrics: || {
-                    vec![Box::new(PowerStatusMetric {
-                        measurement: Measurement::Power,
-                        name: "collector1".to_string(),
-                        value: 100,
-                    })]
-                },
-            });
+            let collector1 = Box::new(MockMetricCollector::new_with_data(|| {
+                vec![Box::new(PowerStatusMetric {
+                    measurement: Measurement::Power,
+                    name: "collector1".to_string(),
+                    value: 100,
+                })]
+            }));
 
-            let collector2 = Box::new(MockSuccessCollector {
-                create_metrics: || {
-                    vec![Box::new(PowerStatusMetric {
-                        measurement: Measurement::Power,
-                        name: "collector2".to_string(),
-                        value: 200,
-                    })]
-                },
-            });
+            let collector2 = Box::new(MockMetricCollector::new_with_data(|| {
+                vec![Box::new(PowerStatusMetric {
+                    measurement: Measurement::Power,
+                    name: "collector2".to_string(),
+                    value: 200,
+                })]
+            }));
 
             let collectors: Vec<Box<dyn MetricCollector>> = vec![collector1, collector2];
             let result = batch_collect_metrics(&collectors, test_timestamp()).await;
@@ -516,19 +482,15 @@ mod tests {
 
         #[tokio::test]
         async fn test_batch_collect_metrics_with_collector_failure() {
-            let success_collector = Box::new(MockSuccessCollector {
-                create_metrics: || {
-                    vec![Box::new(PowerStatusMetric {
-                        measurement: Measurement::Power,
-                        name: "success".to_string(),
-                        value: 100,
-                    })]
-                },
-            });
+            let success_collector = Box::new(MockMetricCollector::new_with_data(|| {
+                vec![Box::new(PowerStatusMetric {
+                    measurement: Measurement::Power,
+                    name: "success".to_string(),
+                    value: 100,
+                })]
+            }));
 
-            let failure_collector = Box::new(MockFailureCollector {
-                error_message: "Collection failed".to_string(),
-            });
+            let failure_collector = Box::new(MockMetricCollector::new_failure("Collection failed"));
 
             let collectors: Vec<Box<dyn MetricCollector>> =
                 vec![success_collector, failure_collector];
@@ -570,13 +532,9 @@ mod tests {
 
         #[tokio::test]
         async fn test_batch_collect_metrics_all_failures() {
-            let collector1 = Box::new(MockFailureCollector {
-                error_message: "Collector 1 failed".to_string(),
-            });
+            let collector1 = Box::new(MockMetricCollector::new_failure("Collector 1 failed"));
 
-            let collector2 = Box::new(MockFailureCollector {
-                error_message: "Collector 2 failed".to_string(),
-            });
+            let collector2 = Box::new(MockMetricCollector::new_failure("Collector 2 failed"));
 
             let collectors: Vec<Box<dyn MetricCollector>> = vec![collector1, collector2];
             let result = batch_collect_metrics(&collectors, test_timestamp()).await;

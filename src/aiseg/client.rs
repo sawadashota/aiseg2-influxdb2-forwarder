@@ -127,11 +127,11 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aiseg::test_utils::test_config;
+    use crate::test_utils::config::test_aiseg2_config_with_url;
 
     #[test]
     fn test_client_new() {
-        let config = test_config("http://test.local".to_string());
+        let config = test_aiseg2_config_with_url("http://test.local");
         let client = Client::new(config);
 
         assert_eq!(client.config.url, "http://test.local");
@@ -152,7 +152,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = test_config(mock_url);
+        let config = test_aiseg2_config_with_url(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/test/path").await;
@@ -174,7 +174,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = test_config(mock_url);
+        let config = test_aiseg2_config_with_url(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/not/found").await;
@@ -200,7 +200,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = test_config(mock_url);
+        let config = test_aiseg2_config_with_url(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/error").await;
@@ -226,7 +226,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = test_config(mock_url);
+        let config = test_aiseg2_config_with_url(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/api/data").await;
@@ -257,7 +257,7 @@ mod tests {
             .create_async()
             .await;
 
-        let config = test_config(mock_url);
+        let config = test_aiseg2_config_with_url(mock_url);
 
         let client = Client::new(config);
         let result = client.get("/page/electricflow/111").await;
@@ -272,7 +272,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_connection_error() {
         // Use a non-existent server URL
-        let config = test_config("http://non-existent-server.local:12345".to_string());
+        let config = test_aiseg2_config_with_url("http://non-existent-server.local:12345");
 
         let client = Client::new(config);
         let result = client.get("/test").await;

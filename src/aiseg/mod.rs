@@ -2,10 +2,6 @@ mod circuit_daily_total_metric_collector;
 mod client;
 mod daily_total_metric_collector;
 mod helper;
-#[cfg(test)]
-mod test_helpers;
-#[cfg(test)]
-mod test_utils;
 
 // New modular structure
 mod collector_base;

@@ -22,6 +22,9 @@ mod config;
 mod influxdb;
 mod model;
 
+#[cfg(test)]
+mod test_utils;
+
 use crate::model::{batch_collect_metrics, MetricCollector};
 use chrono::{Local, NaiveTime};
 use std::future::IntoFuture;
@@ -274,44 +277,12 @@ async fn collect_past_total(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::InfluxConfig;
-    use crate::model::{DataPointBuilder, Measurement, PowerStatusMetric};
-    use anyhow::anyhow;
-    use async_trait::async_trait;
-    use chrono::{DateTime, Local};
+    use crate::test_utils::{config::test_influx_config, mocks::MockMetricCollector};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use tokio::time::Duration;
 
-    // Mock MetricCollector implementation
-    struct MockMetricCollector {
-        should_fail: bool,
-    }
-
-    impl MockMetricCollector {
-        fn new(should_fail: bool) -> Self {
-            Self { should_fail }
-        }
-    }
-
-    #[async_trait]
-    impl MetricCollector for MockMetricCollector {
-        async fn collect(
-            &self,
-            _timestamp: DateTime<Local>,
-        ) -> anyhow::Result<Vec<Box<dyn DataPointBuilder>>> {
-            if self.should_fail {
-                Err(anyhow!("Mock collection failed"))
-            } else {
-                let metrics: Vec<Box<dyn DataPointBuilder>> = vec![Box::new(PowerStatusMetric {
-                    measurement: Measurement::Power,
-                    name: "test".to_string(),
-                    value: 100,
-                })];
-                Ok(metrics)
-            }
-        }
-    }
+    // Mock implementations are now in test_utils::mocks
 
     mod with_timeout {
         use super::*;
@@ -382,14 +353,9 @@ mod tests {
         async fn succeeds() {
             // Mock successful collection and write
             let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
-                Arc::new(vec![Box::new(MockMetricCollector::new(false))]);
+                Arc::new(vec![Box::new(MockMetricCollector::new_success())]);
 
-            let influx_config = InfluxConfig {
-                url: "http://localhost:8086".to_string(),
-                org: "test".to_string(),
-                bucket: "test".to_string(),
-                token: "test-token".to_string(),
-            };
+            let influx_config = test_influx_config();
             let influx_client = Arc::new(influxdb::Client::new(influx_config));
 
             // We can't easily test the actual write without a real InfluxDB instance,
@@ -400,15 +366,11 @@ mod tests {
         #[tokio::test]
         async fn fails() {
             // Mock failed collection
-            let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
-                Arc::new(vec![Box::new(MockMetricCollector::new(true))]);
+            let collectors: Arc<Vec<Box<dyn MetricCollector>>> = Arc::new(vec![Box::new(
+                MockMetricCollector::new_failure("Mock collection failed"),
+            )]);
 
-            let influx_config = InfluxConfig {
-                url: "http://localhost:8086".to_string(),
-                org: "test".to_string(),
-                bucket: "test".to_string(),
-                token: "test-token".to_string(),
-            };
+            let influx_config = test_influx_config();
             let influx_client = Arc::new(influxdb::Client::new(influx_config));
 
             // Function should handle collection failures gracefully
@@ -423,14 +385,9 @@ mod tests {
         async fn succeeds() {
             // Mock successful collection and write
             let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
-                Arc::new(vec![Box::new(MockMetricCollector::new(false))]);
+                Arc::new(vec![Box::new(MockMetricCollector::new_success())]);
 
-            let influx_config = InfluxConfig {
-                url: "http://localhost:8086".to_string(),
-                org: "test".to_string(),
-                bucket: "test".to_string(),
-                token: "test-token".to_string(),
-            };
+            let influx_config = test_influx_config();
             let influx_client = Arc::new(influxdb::Client::new(influx_config));
 
             // Run once with minimal interval
@@ -446,15 +403,11 @@ mod tests {
         #[tokio::test]
         async fn fails() {
             // Test collection failure
-            let collectors: Arc<Vec<Box<dyn MetricCollector>>> =
-                Arc::new(vec![Box::new(MockMetricCollector::new(true))]);
+            let collectors: Arc<Vec<Box<dyn MetricCollector>>> = Arc::new(vec![Box::new(
+                MockMetricCollector::new_failure("Mock collection failed"),
+            )]);
 
-            let influx_config = InfluxConfig {
-                url: "http://localhost:8086".to_string(),
-                org: "test".to_string(),
-                bucket: "test".to_string(),
-                token: "test-token".to_string(),
-            };
+            let influx_config = test_influx_config();
             let influx_client = Arc::new(influxdb::Client::new(influx_config));
 
             // Function should handle failures gracefully

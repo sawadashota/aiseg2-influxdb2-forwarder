@@ -121,15 +121,8 @@ impl MetricCollector for CircuitDailyTotalMetricCollector {
 mod tests {
     use super::*;
     use crate::aiseg::query_builder::make_circuit_query;
-    use crate::aiseg::test_utils::test_config;
+    use crate::test_utils::{config::test_aiseg2_config_with_url, html::create_value_only_html};
     use chrono::TimeZone;
-
-    fn create_html_response(value: &str) -> String {
-        format!(
-            r#"<html><body><div id="val_kwh">{}</div></body></html>"#,
-            value
-        )
-    }
 
     mod succeeds {
         use super::*;
@@ -148,11 +141,11 @@ mod tests {
                     format!("/page/graph/584?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("123.45"))
+                .with_body(create_value_only_html("123.45"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -182,11 +175,11 @@ mod tests {
                     format!("/page/graph/584?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("456.78"))
+                .with_body(create_value_only_html("456.78"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -224,11 +217,11 @@ mod tests {
                         format!("/page/graph/584?data={}", expected_query).as_str(),
                     )
                     .with_status(200)
-                    .with_body(create_html_response(html_value))
+                    .with_body(create_value_only_html(html_value))
                     .create_async()
                     .await;
 
-                let config = test_config(mock_url.clone());
+                let config = test_aiseg2_config_with_url(mock_url.clone());
                 let client = Arc::new(Client::new(config));
                 let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -265,12 +258,12 @@ mod tests {
                         format!("/page/graph/584?data={}", expected_query).as_str(),
                     )
                     .with_status(200)
-                    .with_body(create_html_response(value))
+                    .with_body(create_value_only_html(value))
                     .create_async()
                     .await;
             }
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -305,7 +298,7 @@ mod tests {
                     .as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("0.0"))
+                .with_body(create_value_only_html("0.0"))
                 .create_async()
                 .await;
 
@@ -319,7 +312,7 @@ mod tests {
                     .as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("999.99"))
+                .with_body(create_value_only_html("999.99"))
                 .create_async()
                 .await;
 
@@ -333,7 +326,7 @@ mod tests {
                     .as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("50.5"))
+                .with_body(create_value_only_html("50.5"))
                 .create_async()
                 .await;
 
@@ -347,11 +340,11 @@ mod tests {
                     .as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("1.23"))
+                .with_body(create_value_only_html("1.23"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -387,7 +380,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -417,11 +410,11 @@ mod tests {
                     format!("/page/graph/584?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("not-a-number"))
+                .with_body(create_value_only_html("not-a-number"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -451,7 +444,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -485,7 +478,7 @@ mod tests {
                     .as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("100.0"))
+                .with_body(create_value_only_html("100.0"))
                 .create_async()
                 .await;
 
@@ -499,7 +492,7 @@ mod tests {
                     .as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("200.0"))
+                .with_body(create_value_only_html("200.0"))
                 .create_async()
                 .await;
 
@@ -513,7 +506,7 @@ mod tests {
                     .as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("300.0"))
+                .with_body(create_value_only_html("300.0"))
                 .create_async()
                 .await;
 
@@ -532,7 +525,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 
@@ -566,7 +559,7 @@ mod tests {
                     .await;
             }
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = CircuitDailyTotalMetricCollector::new(client);
 

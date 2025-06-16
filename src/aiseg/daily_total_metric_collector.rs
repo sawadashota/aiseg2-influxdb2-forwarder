@@ -122,18 +122,8 @@ impl MetricCollector for DailyTotalMetricCollector {
 mod tests {
     use super::*;
     use crate::aiseg::query_builder::make_daily_total_query;
-    use crate::aiseg::test_utils::test_config;
+    use crate::test_utils::{config::test_aiseg2_config_with_url, html::create_title_value_html};
     use chrono::TimeZone;
-
-    fn create_html_response(title: &str, value: &str) -> String {
-        format!(
-            r#"<html><body>
-                <div id="h_title">{}</div>
-                <div id="val_kwh">{}</div>
-            </body></html>"#,
-            title, value
-        )
-    }
 
     mod succeeds {
         use super::*;
@@ -152,11 +142,11 @@ mod tests {
                     format!("/page/graph/51111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("太陽光発電量", "123.45"))
+                .with_body(create_title_value_html("太陽光発電量", "123.45"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -187,11 +177,11 @@ mod tests {
                     format!("/page/graph/52111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("消費電力量", "456.78"))
+                .with_body(create_title_value_html("消費電力量", "456.78"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -222,11 +212,11 @@ mod tests {
                     format!("/page/graph/51111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("電力", "100.0"))
+                .with_body(create_title_value_html("電力", "100.0"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url.clone());
+            let config = test_aiseg2_config_with_url(mock_url.clone());
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -243,11 +233,11 @@ mod tests {
                     format!("/page/graph/55111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("給湯量", "200.5"))
+                .with_body(create_title_value_html("給湯量", "200.5"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url.clone());
+            let config = test_aiseg2_config_with_url(mock_url.clone());
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -264,11 +254,11 @@ mod tests {
                     format!("/page/graph/57111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("ガス使用量", "15.3"))
+                .with_body(create_title_value_html("ガス使用量", "15.3"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -305,12 +295,12 @@ mod tests {
                         format!("/page/graph/{}?data={}", graph_id, expected_query).as_str(),
                     )
                     .with_status(200)
-                    .with_body(create_html_response(title, value))
+                    .with_body(create_title_value_html(title, value))
                     .create_async()
                     .await;
             }
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -342,7 +332,7 @@ mod tests {
                     format!("/page/graph/51111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("発電", "0.0"))
+                .with_body(create_title_value_html("発電", "0.0"))
                 .create_async()
                 .await;
 
@@ -352,7 +342,7 @@ mod tests {
                     format!("/page/graph/52111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("消費", "999.999"))
+                .with_body(create_title_value_html("消費", "999.999"))
                 .create_async()
                 .await;
 
@@ -362,7 +352,7 @@ mod tests {
                     format!("/page/graph/53111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("買電", "1"))
+                .with_body(create_title_value_html("買電", "1"))
                 .create_async()
                 .await;
 
@@ -372,7 +362,7 @@ mod tests {
                     format!("/page/graph/54111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("売電", "0.001"))
+                .with_body(create_title_value_html("売電", "0.001"))
                 .create_async()
                 .await;
 
@@ -382,7 +372,7 @@ mod tests {
                     format!("/page/graph/55111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("給湯", "1234.5678"))
+                .with_body(create_title_value_html("給湯", "1234.5678"))
                 .create_async()
                 .await;
 
@@ -392,11 +382,11 @@ mod tests {
                     format!("/page/graph/57111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("ガス", "99.99"))
+                .with_body(create_title_value_html("ガス", "99.99"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -432,7 +422,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -469,7 +459,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -499,11 +489,11 @@ mod tests {
                     format!("/page/graph/51111?data={}", expected_query).as_str(),
                 )
                 .with_status(200)
-                .with_body(create_html_response("Title", "not-a-number"))
+                .with_body(create_title_value_html("Title", "not-a-number"))
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -533,7 +523,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -573,7 +563,7 @@ mod tests {
                         format!("/page/graph/{}?data={}", graph_id, expected_query).as_str(),
                     )
                     .with_status(200)
-                    .with_body(create_html_response(title, value))
+                    .with_body(create_title_value_html(title, value))
                     .create_async()
                     .await;
             }
@@ -589,7 +579,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 
@@ -623,7 +613,7 @@ mod tests {
                     .await;
             }
 
-            let config = test_config(mock_url);
+            let config = test_aiseg2_config_with_url(mock_url);
             let client = Arc::new(Client::new(config));
             let collector = DailyTotalMetricCollector::new(client);
 

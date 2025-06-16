@@ -115,24 +115,16 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::InfluxConfig;
-    use influxdb2::models::DataPoint;
+    use crate::test_utils::{
+        builders::TestInfluxDataPointBuilder, config::test_influx_config_with_url,
+    };
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn test_config(url: String) -> InfluxConfig {
-        InfluxConfig {
-            url,
-            org: "test-org".to_string(),
-            token: "test-token".to_string(),
-            bucket: "test-bucket".to_string(),
-        }
-    }
-
-    fn create_test_point() -> DataPoint {
-        DataPoint::builder("test_measurement")
-            .tag("test_tag", "test_value")
-            .field("test_field", 123.45)
+    fn create_test_point() -> influxdb2::models::DataPoint {
+        TestInfluxDataPointBuilder::new("test_measurement")
+            .add_tag("test_tag", "test_value")
+            .add_field("test_field", 123.45)
             .build()
             .unwrap()
     }
@@ -142,7 +134,7 @@ mod tests {
 
         #[test]
         fn test_client_new() {
-            let config = test_config("http://localhost:8086".to_string());
+            let config = test_influx_config_with_url("http://localhost:8086".to_string());
             let client = Client::new(config);
 
             assert_eq!(client.bucket, "test-bucket");
@@ -151,7 +143,7 @@ mod tests {
         #[tokio::test]
         async fn test_write_single_point() {
             let mock_server = MockServer::start().await;
-            let config = test_config(mock_server.uri());
+            let config = test_influx_config_with_url(mock_server.uri());
             let client = Client::new(config);
 
             Mock::given(method("POST"))
@@ -170,7 +162,7 @@ mod tests {
         #[tokio::test]
         async fn test_write_multiple_points() {
             let mock_server = MockServer::start().await;
-            let config = test_config(mock_server.uri());
+            let config = test_influx_config_with_url(mock_server.uri());
             let client = Client::new(config);
 
             Mock::given(method("POST"))
@@ -193,7 +185,7 @@ mod tests {
         #[tokio::test]
         async fn test_write_empty_points() {
             let mock_server = MockServer::start().await;
-            let config = test_config(mock_server.uri());
+            let config = test_influx_config_with_url(mock_server.uri());
             let client = Client::new(config);
 
             // The influxdb2 client handles empty vectors gracefully
@@ -216,7 +208,7 @@ mod tests {
         #[tokio::test]
         async fn test_write_network_error() {
             // Use a non-existent server to simulate network error
-            let config = test_config("http://localhost:1".to_string());
+            let config = test_influx_config_with_url("http://localhost:1".to_string());
             let client = Client::new(config);
 
             let point = create_test_point();
@@ -228,7 +220,7 @@ mod tests {
         #[tokio::test]
         async fn test_write_auth_error() {
             let mock_server = MockServer::start().await;
-            let config = test_config(mock_server.uri());
+            let config = test_influx_config_with_url(mock_server.uri());
             let client = Client::new(config);
 
             Mock::given(method("POST"))
@@ -249,7 +241,7 @@ mod tests {
         #[tokio::test]
         async fn test_write_server_error() {
             let mock_server = MockServer::start().await;
-            let config = test_config(mock_server.uri());
+            let config = test_influx_config_with_url(mock_server.uri());
             let client = Client::new(config);
 
             Mock::given(method("POST"))

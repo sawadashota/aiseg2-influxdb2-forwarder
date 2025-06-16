@@ -227,7 +227,7 @@ pub fn parse_consumption_device(document: &Html, stage_id: &str) -> Result<Optio
 /// # Returns
 /// A vector of tuples (name, value) for each generation source found
 pub fn parse_generation_details(document: &Html, max_items: usize) -> Result<Vec<(String, f64)>> {
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(max_items);
 
     for i in 1..=max_items {
         let title_selector = format!("#g_d_{}_title", i);

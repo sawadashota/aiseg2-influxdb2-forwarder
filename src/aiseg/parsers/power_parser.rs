@@ -66,6 +66,7 @@ pub fn parse_consumption_page(document: &Html) -> Result<Vec<PowerStatusBreakdow
 /// Checks if two consumption pages have the same device names.
 ///
 /// Used to detect when pagination has wrapped around.
+#[allow(dead_code)]
 pub fn has_duplicate_device_names(
     previous: &[PowerStatusBreakdownMetric],
     current: &[PowerStatusBreakdownMetric],

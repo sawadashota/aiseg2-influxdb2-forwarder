@@ -7,3 +7,9 @@ export INFLUXDB_URL=
 export INFLUXDB_TOKEN=
 export INFLUXDB_ORG=
 export INFLUXDB_BUCKET=
+
+# Optional collector configuration (defaults shown)
+# export COLLECTOR_STATUS_INTERVAL_SEC=5
+# export COLLECTOR_TOTAL_INTERVAL_SEC=60
+# export COLLECTOR_TOTAL_INITIAL_DAYS=30
+# export COLLECTOR_TASK_TIMEOUT_SECONDS=10

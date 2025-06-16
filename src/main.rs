@@ -47,7 +47,8 @@ async fn main() {
         .with_max_level(app_config.log_level())
         .init();
 
-    let collector_config = config::load_collector_config().expect("Failed to load CollectorConfig");
+    let collector_config =
+        Arc::new(config::load_collector_config().expect("Failed to load CollectorConfig"));
     let influx_config = config::load_influx_config().expect("Failed to load InfluxConfig");
     let influx_client = Arc::new(influxdb::Client::new(influx_config));
 
@@ -82,19 +83,23 @@ async fn main() {
     // Factory functions for creating collector tasks
     // These allow easy task recreation after failures
     let create_collect_status_task = || -> tokio::task::JoinHandle<()> {
+        let config = Arc::clone(&collector_config);
         tokio::spawn(create_collect_task(
             Arc::clone(&influx_client),
             Arc::clone(&status_collectors),
-            Duration::from_secs(collector_config.status_interval_sec),
+            Duration::from_secs(config.status_interval_sec),
             "status_collectors",
+            config.task_timeout_seconds,
         ))
     };
     let create_collect_total_task = || -> tokio::task::JoinHandle<()> {
+        let config = Arc::clone(&collector_config);
         tokio::spawn(create_collect_task(
             Arc::clone(&influx_client),
             Arc::clone(&total_collectors),
-            Duration::from_secs(collector_config.total_interval_sec),
+            Duration::from_secs(config.total_interval_sec),
             "total_collectors",
+            config.task_timeout_seconds,
         ))
     };
     let mut collect_status_task = create_collect_status_task();
@@ -138,14 +143,14 @@ async fn main() {
 ///
 /// # Behavior
 ///
-/// - Timeout is hardcoded to 10 seconds (configurable via COLLECTOR_TASK_TIMEOUT_SECONDS)
+/// - Timeout duration is configurable via the timeout_seconds parameter
 /// - Logs an error if the task times out but doesn't propagate the error
 /// - Used to prevent collector tasks from blocking the main loop
-async fn with_timeout<F>(task_name: &'static str, future: F)
+async fn with_timeout<F>(task_name: &'static str, future: F, timeout_seconds: u64)
 where
     F: IntoFuture,
 {
-    let timeout_duration = Duration::from_secs(10);
+    let timeout_duration = Duration::from_secs(timeout_seconds);
 
     match time::timeout(timeout_duration, future).await {
         Ok(_) => {}
@@ -177,23 +182,28 @@ async fn create_collect_task(
     collectors: Arc<Vec<Box<dyn MetricCollector>>>,
     interval: Duration,
     task_name: &'static str,
+    timeout_seconds: u64,
 ) {
-    with_timeout(task_name, async {
-        let points = batch_collect_metrics(&collectors, Local::now()).await;
+    with_timeout(
+        task_name,
+        async {
+            let points = batch_collect_metrics(&collectors, Local::now()).await;
 
-        for point in &points {
-            tracing::debug!("{:?}", point);
-        }
+            for point in &points {
+                tracing::debug!("{:?}", point);
+            }
 
-        match influx_client.write(points).await {
-            Ok(_) => tracing::info!("Successfully wrote points to InfluxDB ({})", task_name),
-            Err(e) => tracing::error!(
-                "Failed to write points to InfluxDB ({}): {:?}",
-                task_name,
-                e
-            ),
-        }
-    })
+            match influx_client.write(points).await {
+                Ok(_) => tracing::info!("Successfully wrote points to InfluxDB ({})", task_name),
+                Err(e) => tracing::error!(
+                    "Failed to write points to InfluxDB ({}): {:?}",
+                    task_name,
+                    e
+                ),
+            }
+        },
+        timeout_seconds,
+    )
     .await;
     sleep(interval).await;
 }
@@ -293,10 +303,14 @@ mod tests {
             let completed = Arc::new(AtomicBool::new(false));
             let completed_clone = completed.clone();
 
-            with_timeout("test_task", async move {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                completed_clone.store(true, Ordering::SeqCst);
-            })
+            with_timeout(
+                "test_task",
+                async move {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    completed_clone.store(true, Ordering::SeqCst);
+                },
+                10,
+            )
             .await;
 
             assert!(completed.load(Ordering::SeqCst));
@@ -308,10 +322,14 @@ mod tests {
             let completed = Arc::new(AtomicBool::new(false));
             let completed_clone = completed.clone();
 
-            with_timeout("test_task", async move {
-                tokio::time::sleep(Duration::from_secs(15)).await;
-                completed_clone.store(true, Ordering::SeqCst);
-            })
+            with_timeout(
+                "test_task",
+                async move {
+                    tokio::time::sleep(Duration::from_secs(15)).await;
+                    completed_clone.store(true, Ordering::SeqCst);
+                },
+                10,
+            )
             .await;
 
             // Task should not complete due to timeout
@@ -396,6 +414,7 @@ mod tests {
                 collectors,
                 Duration::from_millis(1),
                 "test_task",
+                10,
             )
             .await;
         }
@@ -416,6 +435,7 @@ mod tests {
                 collectors,
                 Duration::from_millis(1),
                 "test_task_fails",
+                10,
             )
             .await;
         }

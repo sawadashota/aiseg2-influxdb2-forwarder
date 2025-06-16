@@ -1,8 +1,10 @@
 //! Mock implementations of MetricCollector for testing.
 
 use crate::model::{DataPointBuilder, Measurement, MetricCollector, PowerStatusMetric};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
+use influxdb2::models::DataPoint;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -163,6 +165,18 @@ impl MetricCollector for TimeSensitiveMockCollector {
             }
         }
         Ok(Vec::new())
+    }
+}
+
+/// Mock DataPointBuilder that always fails.
+///
+/// Useful for testing error handling in batch operations.
+#[derive(Clone)]
+pub struct FailingDataPointBuilder;
+
+impl DataPointBuilder for FailingDataPointBuilder {
+    fn to_point(&self) -> Result<DataPoint> {
+        Err(anyhow!("Mock conversion failure"))
     }
 }
 

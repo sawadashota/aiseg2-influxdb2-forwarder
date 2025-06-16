@@ -45,7 +45,7 @@ impl DailyTotalMetricCollector {
         graph_id: &str,
         unit: Unit,
     ) -> Result<PowerTotalMetric> {
-        let the_day = day_of_beginning(&date);
+        let the_day = day_of_beginning(&date)?;
         let response = self
             .client
             .get(&format!(
@@ -203,7 +203,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local.with_ymd_and_hms(2024, 6, 6, 10, 0, 0).unwrap();
-            let expected_query = make_query(day_of_beginning(&date));
+            let expected_query = make_query(day_of_beginning(&date).unwrap());
 
             let _mock = server
                 .mock(
@@ -228,7 +228,7 @@ mod tests {
             assert_eq!(metric.value, 123.45);
             assert_eq!(metric.name, "太陽光発電量(kWh)");
             assert_eq!(metric.measurement, Measurement::DailyTotal);
-            assert_eq!(metric.date, day_of_beginning(&date));
+            assert_eq!(metric.date, day_of_beginning(&date).unwrap());
         }
 
         #[tokio::test]
@@ -237,7 +237,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local.with_ymd_and_hms(2024, 6, 6, 15, 30, 45).unwrap();
-            let expected_date = day_of_beginning(&date);
+            let expected_date = day_of_beginning(&date).unwrap();
             let expected_query = make_query(expected_date);
 
             let _mock = server
@@ -272,7 +272,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date));
+            let expected_query = make_query(day_of_beginning(&date).unwrap());
 
             // Test kWh unit
             let _mock1 = server
@@ -344,7 +344,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_date = day_of_beginning(&date);
+            let expected_date = day_of_beginning(&date).unwrap();
             let expected_query = make_query(expected_date);
 
             // Mock all six metric responses
@@ -391,7 +391,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_date = day_of_beginning(&date);
+            let expected_date = day_of_beginning(&date).unwrap();
             let expected_query = make_query(expected_date);
 
             // Mock responses with different values including edge cases
@@ -476,7 +476,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date));
+            let expected_query = make_query(day_of_beginning(&date).unwrap());
 
             // HTML without #h_title element
             let html_without_title = r#"<html><body><div id="val_kwh">123.45</div></body></html>"#;
@@ -512,7 +512,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date));
+            let expected_query = make_query(day_of_beginning(&date).unwrap());
 
             // HTML without #val_kwh element
             let html_without_val =
@@ -549,7 +549,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date));
+            let expected_query = make_query(day_of_beginning(&date).unwrap());
 
             // HTML with non-numeric value
             let _mock = server
@@ -583,7 +583,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_query = make_query(day_of_beginning(&date));
+            let expected_query = make_query(day_of_beginning(&date).unwrap());
 
             let _mock = server
                 .mock(
@@ -616,7 +616,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_date = day_of_beginning(&date);
+            let expected_date = day_of_beginning(&date).unwrap();
             let expected_query = make_query(expected_date);
 
             // First five metrics succeed
@@ -667,7 +667,7 @@ mod tests {
             let mock_url = server.url();
 
             let date = Local::now();
-            let expected_date = day_of_beginning(&date);
+            let expected_date = day_of_beginning(&date).unwrap();
             let expected_query = make_query(expected_date);
 
             // All metrics return errors

@@ -3,8 +3,6 @@
 //! This module provides a trait-based abstraction for parsing HTML documents
 //! from AiSEG2 web interface, reducing code duplication across collectors.
 
-#![allow(dead_code)]
-
 use anyhow::Result;
 use scraper::{ElementRef, Html};
 

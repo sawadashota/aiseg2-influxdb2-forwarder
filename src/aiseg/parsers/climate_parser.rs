@@ -7,6 +7,8 @@ use scraper::Html;
 use crate::aiseg::helper::html_selector;
 use crate::aiseg::html_parsing::extract_numeric_from_digit_elements;
 use crate::aiseg::metrics::climate::create_climate_metrics;
+use crate::aiseg::parser_adapters::ParserAdapterBuilder;
+use crate::aiseg::parser_traits::ContextualHtmlParser;
 use crate::model::ClimateStatusMetric;
 
 /// Parses climate data from a specific base element.
@@ -75,19 +77,9 @@ pub fn parse_climate_page(
     document: &Html,
     timestamp: DateTime<Local>,
 ) -> Result<Vec<ClimateStatusMetric>> {
-    let mut metrics = Vec::new();
-
-    for i in 1..=3 {
-        let base_id = format!("#base{}_1", i);
-        match parse_climate_location(document, &base_id, timestamp) {
-            Ok(location_metrics) => {
-                metrics.extend(location_metrics);
-            }
-            Err(_) => break, // No more locations on this page
-        }
-    }
-
-    Ok(metrics)
+    // Use trait-based parser adapter
+    let parser = ParserAdapterBuilder::climate_page();
+    parser.parse_with_context(document, timestamp)
 }
 
 #[cfg(test)]

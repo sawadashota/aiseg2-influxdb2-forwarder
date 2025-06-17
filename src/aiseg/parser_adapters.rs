@@ -1,5 +1,7 @@
 //! Adapters that wrap existing parser functions to implement the unified trait system.
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use scraper::Html;

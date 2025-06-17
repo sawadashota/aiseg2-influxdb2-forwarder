@@ -52,7 +52,7 @@ pub fn parse_consumption_page(document: &Html) -> Result<Vec<PowerStatusBreakdow
                 items.push(PowerStatusBreakdownMetric {
                     measurement: crate::model::Measurement::Power,
                     category: crate::model::PowerStatusBreakdownMetricCategory::Consumption,
-                    name: format!("{}(W)", name),
+                    name: format!("{}({})", name, crate::model::Unit::Watt),
                     value: truncate_to_i64(watts),
                 });
             }

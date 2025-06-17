@@ -10,7 +10,10 @@ use crate::aiseg::html_parsing::{
 };
 use crate::aiseg::metrics::climate::create_climate_metrics;
 use crate::aiseg::parser_traits::{ContextualHtmlParser, HtmlParser};
-use crate::model::{ClimateStatusMetric, Measurement, PowerStatusBreakdownMetric, PowerStatusBreakdownMetricCategory};
+use crate::model::{
+    ClimateStatusMetric, Measurement, PowerStatusBreakdownMetric,
+    PowerStatusBreakdownMetricCategory,
+};
 
 /// Adapter for the total power parser.
 pub struct TotalPowerParserAdapter;
@@ -104,7 +107,7 @@ impl ClimatePageParserAdapter {
         timestamp: DateTime<Local>,
     ) -> Result<[ClimateStatusMetric; 2]> {
         use anyhow::Context;
-        
+
         let base_selector = html_selector(base_id)?;
         let base_element = document
             .select(&base_selector)

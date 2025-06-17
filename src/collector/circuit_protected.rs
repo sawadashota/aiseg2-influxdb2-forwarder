@@ -43,7 +43,10 @@ impl MetricCollector for CircuitProtectedCollector {
     ///
     /// If the circuit is open, returns an empty result without calling the underlying collector.
     /// Records successes and failures to update the circuit breaker state.
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
+    async fn collect(
+        &self,
+        timestamp: DateTime<Local>,
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         // Check if the circuit allows this call
         if !self.circuit_breaker.call_allowed().await {
             tracing::debug!(

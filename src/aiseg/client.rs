@@ -175,9 +175,7 @@ mod tests {
 
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("server error (status 404)"));
+        assert!(error.to_string().contains("server error (status 404)"));
         assert!(error.to_string().contains("Not Found"));
     }
 
@@ -201,9 +199,7 @@ mod tests {
 
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("server error (status 500)"));
+        assert!(error.to_string().contains("server error (status 500)"));
         assert!(error.to_string().contains("Internal Server Error"));
     }
 

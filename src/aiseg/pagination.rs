@@ -10,7 +10,10 @@ use std::pin::Pin;
 
 /// Type alias for the fetch function used in pagination.
 pub type FetchFn<'a> = Box<
-    dyn Fn(usize) -> Pin<Box<dyn Future<Output = Result<String, AisegError>> + Send + 'a>> + Send + Sync + 'a,
+    dyn Fn(usize) -> Pin<Box<dyn Future<Output = Result<String, AisegError>> + Send + 'a>>
+        + Send
+        + Sync
+        + 'a,
 >;
 
 /// Type alias for the parse function used in pagination.
@@ -162,12 +165,16 @@ impl<'a, T: PageItem> PaginatorBuilder<'a, T> {
 
     /// Builds the paginator.
     pub fn build(self) -> Result<Paginator<'a, T>, AisegError> {
-        let fetch_fn = self
-            .fetch_fn
-            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Fetch function not set".to_string())))?;
-        let parse_fn = self
-            .parse_fn
-            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Parse function not set".to_string())))?;
+        let fetch_fn = self.fetch_fn.ok_or_else(|| {
+            AisegError::Parse(crate::error::ParseError::UnexpectedStructure(
+                "Fetch function not set".to_string(),
+            ))
+        })?;
+        let parse_fn = self.parse_fn.ok_or_else(|| {
+            AisegError::Parse(crate::error::ParseError::UnexpectedStructure(
+                "Parse function not set".to_string(),
+            ))
+        })?;
 
         Ok(Paginator {
             config: self.config,
@@ -239,7 +246,11 @@ mod tests {
                             .value()
                             .attr("data-id")
                             .and_then(|s| s.parse().ok())
-                            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Missing data-id attribute".to_string())))?;
+                            .ok_or_else(|| {
+                                AisegError::Parse(crate::error::ParseError::UnexpectedStructure(
+                                    "Missing data-id attribute".to_string(),
+                                ))
+                            })?;
                         let name = element.text().collect::<String>();
                         Ok(TestItem { id, name })
                     })
@@ -289,7 +300,11 @@ mod tests {
                             .value()
                             .attr("data-id")
                             .and_then(|s| s.parse().ok())
-                            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Missing data-id attribute".to_string())))?;
+                            .ok_or_else(|| {
+                                AisegError::Parse(crate::error::ParseError::UnexpectedStructure(
+                                    "Missing data-id attribute".to_string(),
+                                ))
+                            })?;
                         let name = element.text().collect::<String>();
                         Ok(TestItem { id, name })
                     })
@@ -333,7 +348,11 @@ mod tests {
                             .value()
                             .attr("data-id")
                             .and_then(|s| s.parse().ok())
-                            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Missing data-id attribute".to_string())))?;
+                            .ok_or_else(|| {
+                                AisegError::Parse(crate::error::ParseError::UnexpectedStructure(
+                                    "Missing data-id attribute".to_string(),
+                                ))
+                            })?;
                         let name = element.text().collect::<String>();
                         Ok(TestItem { id, name })
                     })

@@ -40,7 +40,9 @@ pub fn parse_generation_sources(document: &Html) -> Result<Vec<(String, f64)>, A
 ///
 /// # Returns
 /// Vector of consumption metrics found on the page
-pub fn parse_consumption_page(document: &Html) -> Result<Vec<PowerStatusBreakdownMetric>, AisegError> {
+pub fn parse_consumption_page(
+    document: &Html,
+) -> Result<Vec<PowerStatusBreakdownMetric>, AisegError> {
     // Use trait-based parser adapter
     let parser = ParserAdapterBuilder::consumption_page();
     parser.parse(document)

@@ -34,6 +34,7 @@ pub enum Error {
 
 /// Configuration-related errors.
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum ConfigError {
     /// Environment variable parsing failed
     #[error("failed to parse environment variables: {0}")]
@@ -50,6 +51,7 @@ pub enum ConfigError {
 
 /// AiSEG2 communication and parsing errors.
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum AisegError {
     /// HTTP request failed
     #[error("HTTP request failed: {0}")]
@@ -110,6 +112,7 @@ pub enum ParseError {
 
 /// Metric collection errors.
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum CollectorError {
     /// Collector task timed out
     #[error("collector '{name}' timed out after {timeout} seconds")]
@@ -134,6 +137,7 @@ pub enum CollectorError {
 
 /// InfluxDB storage errors.
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum StorageError {
     /// InfluxDB client error
     #[error("InfluxDB error: {0}")]
@@ -158,6 +162,7 @@ pub enum StorageError {
 
 // Note: Our Error types automatically work with anyhow due to implementing std::error::Error
 
+#[allow(dead_code)]
 impl ConfigError {
     /// Creates a new environment parse error.
     pub fn env_parse(err: impl std::fmt::Display) -> Self {
@@ -228,6 +233,7 @@ impl ParseError {
     }
 }
 
+#[allow(dead_code)]
 impl CollectorError {
     /// Creates a timeout error.
     pub fn timeout(name: impl Into<String>, timeout: u64) -> Self {
@@ -248,6 +254,7 @@ impl CollectorError {
     }
 }
 
+#[allow(dead_code)]
 impl StorageError {
     /// Creates a write failed error.
     pub fn write_failed(count: usize, err: impl std::fmt::Display) -> Self {
@@ -273,19 +280,28 @@ mod tests {
         #[test]
         fn test_env_parse_error() {
             let err = ConfigError::env_parse("invalid format");
-            assert_eq!(err.to_string(), "failed to parse environment variables: invalid format");
+            assert_eq!(
+                err.to_string(),
+                "failed to parse environment variables: invalid format"
+            );
         }
 
         #[test]
         fn test_missing_error() {
             let err = ConfigError::missing("DATABASE_URL");
-            assert_eq!(err.to_string(), "missing required configuration: DATABASE_URL");
+            assert_eq!(
+                err.to_string(),
+                "missing required configuration: DATABASE_URL"
+            );
         }
 
         #[test]
         fn test_invalid_error() {
             let err = ConfigError::invalid("port", "must be a number");
-            assert_eq!(err.to_string(), "invalid configuration value for port: must be a number");
+            assert_eq!(
+                err.to_string(),
+                "invalid configuration value for port: must be a number"
+            );
         }
     }
 
@@ -301,7 +317,10 @@ mod tests {
         #[test]
         fn test_number_parse() {
             let err = ParseError::number_parse("abc", "invalid digit");
-            assert_eq!(err.to_string(), "failed to parse number from 'abc': invalid digit");
+            assert_eq!(
+                err.to_string(),
+                "failed to parse number from 'abc': invalid digit"
+            );
         }
     }
 
@@ -311,13 +330,19 @@ mod tests {
         #[test]
         fn test_timeout() {
             let err = CollectorError::timeout("PowerCollector", 30);
-            assert_eq!(err.to_string(), "collector 'PowerCollector' timed out after 30 seconds");
+            assert_eq!(
+                err.to_string(),
+                "collector 'PowerCollector' timed out after 30 seconds"
+            );
         }
 
         #[test]
         fn test_circuit_open() {
             let err = CollectorError::circuit_open("ClimateCollector");
-            assert_eq!(err.to_string(), "circuit breaker open for collector 'ClimateCollector'");
+            assert_eq!(
+                err.to_string(),
+                "circuit breaker open for collector 'ClimateCollector'"
+            );
         }
     }
 
@@ -327,13 +352,19 @@ mod tests {
         #[test]
         fn test_write_failed() {
             let err = StorageError::write_failed(100, "network error");
-            assert_eq!(err.to_string(), "failed to write 100 data points: network error");
+            assert_eq!(
+                err.to_string(),
+                "failed to write 100 data points: network error"
+            );
         }
 
         #[test]
         fn test_connection_failed() {
             let err = StorageError::connection_failed("http://localhost:8086");
-            assert_eq!(err.to_string(), "failed to connect to InfluxDB at http://localhost:8086");
+            assert_eq!(
+                err.to_string(),
+                "failed to connect to InfluxDB at http://localhost:8086"
+            );
         }
     }
 

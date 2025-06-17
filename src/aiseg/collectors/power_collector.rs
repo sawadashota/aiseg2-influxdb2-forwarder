@@ -42,20 +42,20 @@ impl PowerMetricCollector {
 
     /// Collects metrics from the main electricity flow page.
     async fn collect_from_main_page(&self) -> MetricResult {
-        let response = self.fetch_page("/page/electricflow/111").await
+        let response = self
+            .fetch_page("/page/electricflow/111")
+            .await
             .map_err(CollectorError::Source)?;
         let document = Html::parse_document(&response);
 
         let mut metrics = Vec::new();
 
         // Parse and create total metrics
-        let (gen_kw, cons_kw) = parse_total_power(&document)
-            .map_err(CollectorError::Source)?;
+        let (gen_kw, cons_kw) = parse_total_power(&document).map_err(CollectorError::Source)?;
         metrics.extend(create_total_power_metrics(gen_kw, cons_kw));
 
         // Parse and create generation breakdown
-        let sources = parse_generation_sources(&document)
-            .map_err(CollectorError::Source)?;
+        let sources = parse_generation_sources(&document).map_err(CollectorError::Source)?;
         metrics.extend(create_generation_metrics(sources));
 
         Ok(metrics)
@@ -79,7 +79,9 @@ impl PowerMetricCollector {
             .build()
             .map_err(CollectorError::Source)?;
 
-        let all_items = paginator.collect_all().await
+        let all_items = paginator
+            .collect_all()
+            .await
             .map_err(CollectorError::Source)?;
 
         // Merge duplicates and convert to metrics
@@ -101,7 +103,10 @@ impl CollectorBase for PowerMetricCollector {
 
 #[async_trait]
 impl MetricCollector for PowerMetricCollector {
-    async fn collect(&self, _timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
+    async fn collect(
+        &self,
+        _timestamp: DateTime<Local>,
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         let mut all_metrics = Vec::new();
 
         // Collect from main page

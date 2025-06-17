@@ -31,5 +31,8 @@ pub trait MetricCollector: Send + Sync {
     ///
     /// # Returns
     /// A future that resolves to a vector of DataPointBuilder instances
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError>;
+    async fn collect(
+        &self,
+        timestamp: DateTime<Local>,
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError>;
 }

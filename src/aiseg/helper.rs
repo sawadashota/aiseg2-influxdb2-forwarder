@@ -68,8 +68,7 @@ pub fn parse_text_from_html(document: &Html, selector: &str) -> Result<String, P
 /// - `".class"` - Class selector
 /// - `"div > span"` - Complex selector
 pub fn html_selector(selector: &str) -> Result<Selector, ParseError> {
-    Selector::parse(selector)
-        .map_err(|e| ParseError::invalid_selector(selector, e))
+    Selector::parse(selector).map_err(|e| ParseError::invalid_selector(selector, e))
 }
 
 /// Parses a floating-point number from an HTML element.
@@ -106,14 +105,17 @@ pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64, Parse
         .select(&selector_obj)
         .next()
         .ok_or_else(|| ParseError::element_not_found(selector))?;
-    let inner_text = element.text().next().ok_or_else(|| ParseError::EmptyElement {
-        selector: selector.to_string(),
-    })?;
+    let inner_text = element
+        .text()
+        .next()
+        .ok_or_else(|| ParseError::EmptyElement {
+            selector: selector.to_string(),
+        })?;
     let numeric_str = inner_text
         .chars()
         .filter(|c| c.is_numeric() || c == &'.')
         .collect::<String>();
-    
+
     numeric_str
         .parse::<f64>()
         .map_err(|e| ParseError::number_parse(&numeric_str, e))
@@ -146,10 +148,9 @@ pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64, Parse
 pub fn day_of_beginning(date: &DateTime<Local>) -> Result<DateTime<Local>, ParseError> {
     date.with_time(NaiveTime::default())
         .single()
-        .ok_or_else(|| ParseError::datetime_parse(
-            date.to_string(),
-            "Failed to set time to midnight"
-        ))
+        .ok_or_else(|| {
+            ParseError::datetime_parse(date.to_string(), "Failed to set time to midnight")
+        })
 }
 
 /// Truncates a floating-point number to an integer.
@@ -401,10 +402,7 @@ mod tests {
             let result = parse_text_from_html(&html, ".test");
 
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("has no content"));
+            assert!(result.unwrap_err().to_string().contains("has no content"));
         }
 
         #[test]
@@ -413,30 +411,21 @@ mod tests {
             let result = parse_text_from_html(&html, ":::invalid");
 
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("invalid selector"));
+            assert!(result.unwrap_err().to_string().contains("invalid selector"));
         }
 
         #[test]
         fn test_html_selector_invalid_syntax() {
             let result = html_selector(":::invalid");
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("invalid selector"));
+            assert!(result.unwrap_err().to_string().contains("invalid selector"));
         }
 
         #[test]
         fn test_html_selector_empty_string() {
             let result = html_selector("");
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("invalid selector"));
+            assert!(result.unwrap_err().to_string().contains("invalid selector"));
         }
 
         #[test]
@@ -457,10 +446,7 @@ mod tests {
             let result = parse_f64_from_html(&html, ":::invalid");
 
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("invalid selector"));
+            assert!(result.unwrap_err().to_string().contains("invalid selector"));
         }
 
         #[test]
@@ -469,10 +455,7 @@ mod tests {
             let result = parse_f64_from_html(&html, ".value");
 
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("has no content"));
+            assert!(result.unwrap_err().to_string().contains("has no content"));
         }
 
         #[test]

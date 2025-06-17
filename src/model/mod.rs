@@ -22,8 +22,8 @@ pub use utilities::batch_collect_metrics;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::mocks::{FailingDataPointBuilder, MockMetricCollector};
     use crate::error::{CollectorError, Result};
+    use crate::test_utils::mocks::{FailingDataPointBuilder, MockMetricCollector};
     use chrono::{Local, TimeZone};
 
     // Helper function to create a test timestamp

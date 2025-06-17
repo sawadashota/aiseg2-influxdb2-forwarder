@@ -97,7 +97,9 @@ impl MetricCollector for CountingMockCollector {
         self.call_count.fetch_add(1, Ordering::SeqCst);
 
         if self.should_fail {
-            Err(CollectorError::ValidationFailed("Mock collector configured to fail".to_string()))
+            Err(CollectorError::ValidationFailed(
+                "Mock collector configured to fail".to_string(),
+            ))
         } else {
             Ok(Vec::new())
         }
@@ -176,7 +178,9 @@ pub struct FailingDataPointBuilder;
 
 impl DataPointBuilder for FailingDataPointBuilder {
     fn to_point(&self) -> Result<DataPoint, StorageError> {
-        Err(StorageError::InvalidDataPoint("Mock conversion failure".to_string()))
+        Err(StorageError::InvalidDataPoint(
+            "Mock conversion failure".to_string(),
+        ))
     }
 }
 

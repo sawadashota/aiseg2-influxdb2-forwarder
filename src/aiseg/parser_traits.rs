@@ -44,7 +44,11 @@ pub trait ContextualHtmlParser {
     type Context;
 
     /// Parse HTML document with context into the output type
-    fn parse_with_context(&self, document: &Html, context: Self::Context) -> Result<Self::Output, AisegError>;
+    fn parse_with_context(
+        &self,
+        document: &Html,
+        context: Self::Context,
+    ) -> Result<Self::Output, AisegError>;
 }
 
 #[cfg(test)]

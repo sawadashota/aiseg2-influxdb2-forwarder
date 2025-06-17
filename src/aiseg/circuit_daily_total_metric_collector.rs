@@ -57,7 +57,7 @@ impl CircuitDailyTotalMetricCollector {
         circuit_id: &str,
         unit: Unit,
     ) -> Result<PowerTotalMetric, AisegError> {
-        let the_day = day_of_beginning(&date).map_err(|e| AisegError::Parse(e))?;
+        let the_day = day_of_beginning(&date).map_err(AisegError::Parse)?;
         let response = self
             .client
             .get(&format!(
@@ -68,8 +68,7 @@ impl CircuitDailyTotalMetricCollector {
         let document = Html::parse_document(&response);
 
         // Use the new extract_value utility
-        let value: f64 = extract_value(&document, "#val_kwh")
-            .map_err(|e| AisegError::Parse(e))?;
+        let value: f64 = extract_value(&document, "#val_kwh").map_err(AisegError::Parse)?;
 
         Ok(PowerTotalMetric {
             measurement: Measurement::CircuitDailyTotal,
@@ -101,7 +100,10 @@ impl MetricCollector for CircuitDailyTotalMetricCollector {
     ///
     /// A vector of DataPointBuilder instances for all circuits, or an error
     /// if any circuit data collection fails
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
+    async fn collect(
+        &self,
+        timestamp: DateTime<Local>,
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         let metrics = vec![
             self.collect_by_circuit_id(timestamp, "EV", "30", Unit::Kwh)
                 .await
@@ -116,7 +118,7 @@ impl MetricCollector for CircuitDailyTotalMetricCollector {
                 .await
                 .map_err(CollectorError::Source)?,
         ];
-        
+
         Ok(metrics
             .into_iter()
             .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
@@ -430,7 +432,10 @@ mod tests {
                 .await;
 
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("HTML parsing error"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("HTML parsing error"));
         }
 
         #[tokio::test]

@@ -88,7 +88,10 @@ where
 /// * `Ok(T)` - The first successfully parsed value
 /// * `Err` - If all selectors fail
 #[allow(dead_code)]
-pub fn extract_value_with_fallbacks<T: FromStr>(document: &Html, selectors: &[&str]) -> Result<T, ParseError>
+pub fn extract_value_with_fallbacks<T: FromStr>(
+    document: &Html,
+    selectors: &[&str],
+) -> Result<T, ParseError>
 where
     T::Err: std::error::Error + Send + Sync + 'static,
 {
@@ -199,7 +202,10 @@ where
 ///
 /// # Returns
 /// A tuple of (device_name, power_value) or None if the element doesn't exist
-pub fn parse_consumption_device(document: &Html, stage_id: &str) -> Result<Option<(String, f64)>, ParseError> {
+pub fn parse_consumption_device(
+    document: &Html,
+    stage_id: &str,
+) -> Result<Option<(String, f64)>, ParseError> {
     let device_selector = format!("{} > div.c_device", stage_id);
     let device_name = match parse_text_from_html(document, &device_selector) {
         Ok(name) => name,
@@ -220,7 +226,10 @@ pub fn parse_consumption_device(document: &Html, stage_id: &str) -> Result<Optio
 ///
 /// # Returns
 /// A vector of tuples (name, value) for each generation source found
-pub fn parse_generation_details(document: &Html, max_items: usize) -> Result<Vec<(String, f64)>, ParseError> {
+pub fn parse_generation_details(
+    document: &Html,
+    max_items: usize,
+) -> Result<Vec<(String, f64)>, ParseError> {
     let mut results = Vec::with_capacity(max_items);
 
     for i in 1..=max_items {
@@ -251,7 +260,10 @@ pub fn parse_generation_details(document: &Html, max_items: usize) -> Result<Vec
 /// # Returns
 /// A tuple of (value, unit_text) where unit_text may be empty
 #[allow(dead_code)]
-pub fn parse_numeric_with_unit(document: &Html, selector: &str) -> Result<(f64, String), ParseError> {
+pub fn parse_numeric_with_unit(
+    document: &Html,
+    selector: &str,
+) -> Result<(f64, String), ParseError> {
     let selector_obj = html_selector(selector)?;
     let element = document
         .select(&selector_obj)
@@ -367,7 +379,10 @@ mod tests {
         let html = Html::parse_document(r#"<div id="val">not_a_number</div>"#);
         let result: Result<f64, ParseError> = extract_value(&html, "#val");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("failed to parse number"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("failed to parse number"));
     }
 
     #[test]
@@ -388,7 +403,8 @@ mod tests {
     fn test_extract_value_with_fallbacks_first_succeeds() {
         let html =
             Html::parse_document(r#"<div id="primary">100</div><div id="secondary">200</div>"#);
-        let result: Result<i32, ParseError> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
+        let result: Result<i32, ParseError> =
+            extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 100);
     }
@@ -396,7 +412,8 @@ mod tests {
     #[test]
     fn test_extract_value_with_fallbacks_second_succeeds() {
         let html = Html::parse_document(r#"<div id="secondary">200</div>"#);
-        let result: Result<i32, ParseError> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
+        let result: Result<i32, ParseError> =
+            extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 200);
     }
@@ -404,9 +421,13 @@ mod tests {
     #[test]
     fn test_extract_value_with_fallbacks_all_fail() {
         let html = Html::parse_document(r#"<div>Nothing here</div>"#);
-        let result: Result<i32, ParseError> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
+        let result: Result<i32, ParseError> =
+            extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ParseError::UnexpectedStructure(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::UnexpectedStructure(_)
+        ));
     }
 
     #[test]
@@ -553,7 +574,9 @@ mod tests {
             let id = element
                 .value()
                 .attr("data-id")
-                .ok_or_else(|| ParseError::UnexpectedStructure("Missing data-id attribute".to_string()))?
+                .ok_or_else(|| {
+                    ParseError::UnexpectedStructure("Missing data-id attribute".to_string())
+                })?
                 .parse::<u32>()
                 .map_err(|e| ParseError::number_parse("data-id", e))?;
             let text = element.text().collect::<String>();

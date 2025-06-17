@@ -60,7 +60,8 @@ impl PaginationState {
 }
 
 /// Result type for metric collection operations.
-pub type MetricResult = std::result::Result<Vec<Box<dyn DataPointBuilder>>, crate::error::CollectorError>;
+pub type MetricResult =
+    std::result::Result<Vec<Box<dyn DataPointBuilder>>, crate::error::CollectorError>;
 
 /// Merges duplicate metrics by summing their values.
 ///

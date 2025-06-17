@@ -43,7 +43,10 @@ impl CollectorBase for ClimateMetricCollector {
 
 #[async_trait]
 impl MetricCollector for ClimateMetricCollector {
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
+    async fn collect(
+        &self,
+        timestamp: DateTime<Local>,
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         let client = Arc::clone(&self.client);
 
         let paginator = PaginatorBuilder::new()
@@ -60,7 +63,9 @@ impl MetricCollector for ClimateMetricCollector {
             .build()
             .map_err(CollectorError::Source)?;
 
-        let all_metrics = paginator.collect_all().await
+        let all_metrics = paginator
+            .collect_all()
+            .await
             .map_err(CollectorError::Source)?;
         Ok(climate_metrics_to_builders(all_metrics))
     }

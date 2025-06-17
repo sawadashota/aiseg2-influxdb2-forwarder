@@ -104,7 +104,10 @@ impl Client {
     /// ];
     /// client.write(points).await?;
     /// ```
-    pub async fn write(&self, points: Vec<influxdb2::models::DataPoint>) -> Result<(), StorageError> {
+    pub async fn write(
+        &self,
+        points: Vec<influxdb2::models::DataPoint>,
+    ) -> Result<(), StorageError> {
         self.client
             .write(self.bucket.as_str(), stream::iter(points))
             .await

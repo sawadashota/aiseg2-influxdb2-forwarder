@@ -152,7 +152,8 @@ pub struct CircuitBreakerConfig {
 /// - `Ok(CollectorConfig)` with loaded or default values
 /// - `Err` if environment variables contain invalid values
 pub fn load_collector_config() -> Result<CollectorConfig, ConfigError> {
-    envy::prefixed("COLLECTOR_").from_env::<CollectorConfig>()
+    envy::prefixed("COLLECTOR_")
+        .from_env::<CollectorConfig>()
         .map_err(ConfigError::env_parse)
 }
 
@@ -182,7 +183,8 @@ pub struct Aiseg2Config {
 /// - `Ok(Aiseg2Config)` if all required variables are present
 /// - `Err` if any required variables are missing
 pub(crate) fn load_aiseg_config() -> Result<Aiseg2Config, ConfigError> {
-    envy::prefixed("AISEG2_").from_env::<Aiseg2Config>()
+    envy::prefixed("AISEG2_")
+        .from_env::<Aiseg2Config>()
         .map_err(ConfigError::env_parse)
 }
 
@@ -215,7 +217,8 @@ pub struct InfluxConfig {
 /// - `Ok(InfluxConfig)` if all required variables are present
 /// - `Err` if any required variables are missing
 pub fn load_influx_config() -> Result<InfluxConfig, ConfigError> {
-    envy::prefixed("INFLUXDB_").from_env::<InfluxConfig>()
+    envy::prefixed("INFLUXDB_")
+        .from_env::<InfluxConfig>()
         .map_err(ConfigError::env_parse)
 }
 
@@ -231,7 +234,8 @@ pub fn load_influx_config() -> Result<InfluxConfig, ConfigError> {
 /// - `Ok(CircuitBreakerConfig)` with loaded or default values
 /// - `Err` if environment variables contain invalid values
 pub fn load_circuit_breaker_config() -> Result<CircuitBreakerConfig, ConfigError> {
-    envy::prefixed("CIRCUIT_BREAKER_").from_env::<CircuitBreakerConfig>()
+    envy::prefixed("CIRCUIT_BREAKER_")
+        .from_env::<CircuitBreakerConfig>()
         .map_err(ConfigError::env_parse)
 }
 
@@ -402,7 +406,9 @@ mod tests {
             assert!(result.is_err());
             let err = result.unwrap_err();
             // The error should be about parsing environment variables
-            assert!(err.to_string().contains("failed to parse environment variables"));
+            assert!(err
+                .to_string()
+                .contains("failed to parse environment variables"));
         });
     }
 
@@ -463,7 +469,9 @@ mod tests {
                 let result = load_influx_config();
                 assert!(result.is_err());
                 let err = result.unwrap_err();
-                assert!(err.to_string().contains("failed to parse environment variables"));
+                assert!(err
+                    .to_string()
+                    .contains("failed to parse environment variables"));
             },
         );
     }

@@ -22,10 +22,9 @@ impl HtmlParser for TotalPowerParserAdapter {
     type Output = (f64, f64);
 
     fn parse(&self, document: &Html) -> Result<Self::Output, AisegError> {
-        let generation = parse_f64_from_html(document, "#g_capacity")
-            .map_err(|e| AisegError::Parse(e))?;
-        let consumption = parse_f64_from_html(document, "#u_capacity")
-            .map_err(|e| AisegError::Parse(e))?;
+        let generation = parse_f64_from_html(document, "#g_capacity").map_err(AisegError::Parse)?;
+        let consumption =
+            parse_f64_from_html(document, "#u_capacity").map_err(AisegError::Parse)?;
         Ok((generation, consumption))
     }
 }
@@ -37,8 +36,7 @@ impl HtmlParser for GenerationSourcesParserAdapter {
     type Output = Vec<(String, f64)>;
 
     fn parse(&self, document: &Html) -> Result<Self::Output, AisegError> {
-        let details = parse_generation_details(document, 4)
-            .map_err(|e| AisegError::Parse(e))?;
+        let details = parse_generation_details(document, 4).map_err(AisegError::Parse)?;
         Ok(details
             .into_iter()
             .map(|(name, kw)| (name, kw * 1000.0))
@@ -111,44 +109,45 @@ impl ClimatePageParserAdapter {
     ) -> Result<[ClimateStatusMetric; 2], AisegError> {
         use crate::error::ParseError;
 
-        let base_selector = html_selector(base_id)
-            .map_err(|e| AisegError::Parse(e))?;
+        let base_selector = html_selector(base_id).map_err(AisegError::Parse)?;
         let base_element = document
             .select(&base_selector)
             .next()
             .ok_or_else(|| AisegError::Parse(ParseError::element_not_found(base_id)))?;
 
         // Extract location name
-        let name_selector = html_selector(".txt_name")
-            .map_err(|e| AisegError::Parse(e))?;
+        let name_selector = html_selector(".txt_name").map_err(AisegError::Parse)?;
         let name = base_element
             .select(&name_selector)
             .next()
             .ok_or_else(|| AisegError::Parse(ParseError::element_not_found(".txt_name")))?
             .text()
             .next()
-            .ok_or_else(|| AisegError::Parse(ParseError::EmptyElement { selector: ".txt_name".to_string() }))?
+            .ok_or_else(|| {
+                AisegError::Parse(ParseError::EmptyElement {
+                    selector: ".txt_name".to_string(),
+                })
+            })?
             .to_string();
 
         // Find num_wrapper element
-        let num_wrapper_selector = html_selector(".num_wrapper")
-            .map_err(|e| AisegError::Parse(e))?;
+        let num_wrapper_selector = html_selector(".num_wrapper").map_err(AisegError::Parse)?;
         let num_wrapper = base_element
             .select(&num_wrapper_selector)
             .next()
             .ok_or_else(|| AisegError::Parse(ParseError::element_not_found(".num_wrapper")))?;
 
         // Extract temperature
-        let temp_selector = html_selector(r#"[id^="num_ond_"][class*="num no"]"#)
-            .map_err(|e| AisegError::Parse(e))?;
+        let temp_selector =
+            html_selector(r#"[id^="num_ond_"][class*="num no"]"#).map_err(AisegError::Parse)?;
         let temperature = extract_numeric_from_digit_elements(num_wrapper.select(&temp_selector))
-            .map_err(|e| AisegError::Parse(e))?;
+            .map_err(AisegError::Parse)?;
 
         // Extract humidity
-        let humidity_selector = html_selector(r#"[id^="num_shitudo_"][class*="num no"]"#)
-            .map_err(|e| AisegError::Parse(e))?;
+        let humidity_selector =
+            html_selector(r#"[id^="num_shitudo_"][class*="num no"]"#).map_err(AisegError::Parse)?;
         let humidity = extract_numeric_from_digit_elements(num_wrapper.select(&humidity_selector))
-            .map_err(|e| AisegError::Parse(e))?;
+            .map_err(AisegError::Parse)?;
 
         Ok(create_climate_metrics(
             name,

@@ -1,8 +1,8 @@
 //! HTML parsing for AiSEG2 climate pages.
 
-use crate::error::{AisegError, Result};
 #[cfg(test)]
 use crate::error::ParseError;
+use crate::error::{AisegError, Result};
 use chrono::{DateTime, Local};
 use scraper::Html;
 

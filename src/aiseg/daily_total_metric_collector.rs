@@ -45,7 +45,7 @@ impl DailyTotalMetricCollector {
         graph_id: &str,
         unit: Unit,
     ) -> Result<PowerTotalMetric, AisegError> {
-        let the_day = day_of_beginning(&date).map_err(|e| AisegError::Parse(e))?;
+        let the_day = day_of_beginning(&date).map_err(AisegError::Parse)?;
         let response = self
             .client
             .get(&format!(
@@ -57,13 +57,12 @@ impl DailyTotalMetricCollector {
         let document = Html::parse_document(&response);
 
         // Use the new parse_graph_page utility
-        let (name, _watts_value) = parse_graph_page(&document, None, None)
-            .map_err(|e| AisegError::Parse(e))?;
+        let (name, _watts_value) =
+            parse_graph_page(&document, None, None).map_err(AisegError::Parse)?;
         // For daily totals, we need the kWh value, not watts
         // So we'll use the extract_value function directly
         use crate::aiseg::html_parsing::extract_value;
-        let value: f64 = extract_value(&document, "#val_kwh")
-            .map_err(|e| AisegError::Parse(e))?;
+        let value: f64 = extract_value(&document, "#val_kwh").map_err(AisegError::Parse)?;
 
         Ok(PowerTotalMetric {
             measurement: Measurement::DailyTotal,
@@ -93,7 +92,10 @@ impl MetricCollector for DailyTotalMetricCollector {
     /// # Returns
     ///
     /// A vector of DataPointBuilder instances or an error if any collection fails
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
+    async fn collect(
+        &self,
+        timestamp: DateTime<Local>,
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         let metrics = vec![
             // DailyTotalPowerGeneration
             self.collect_by_graph_id(timestamp, "51111", Unit::Kwh)
@@ -120,7 +122,7 @@ impl MetricCollector for DailyTotalMetricCollector {
                 .await
                 .map_err(CollectorError::Source)?,
         ];
-        
+
         Ok(metrics
             .into_iter()
             .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
@@ -512,7 +514,10 @@ mod tests {
                 .await;
 
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("HTML parsing error"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("HTML parsing error"));
         }
 
         #[tokio::test]

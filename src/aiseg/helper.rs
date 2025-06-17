@@ -6,7 +6,7 @@
 //! - Converting between different units (kW to W)
 //! - Date/time manipulation
 
-use anyhow::{anyhow, Context, Result};
+use crate::error::{ParseError, Result};
 use chrono::{DateTime, Local, NaiveTime};
 use scraper::{Html, Selector};
 
@@ -33,14 +33,16 @@ use scraper::{Html, Selector};
 /// let title = parse_text_from_html(&html, "#h_title")?;
 /// assert_eq!(title, "太陽光発電量");
 /// ```
-pub fn parse_text_from_html(document: &Html, selector: &str) -> Result<String> {
-    let selector = html_selector(selector)?;
+pub fn parse_text_from_html(document: &Html, selector: &str) -> Result<String, ParseError> {
+    let selector_obj = html_selector(selector)?;
     let element = document
-        .select(&selector)
+        .select(&selector_obj)
         .next()
-        .context("Failed to find value")?;
+        .ok_or_else(|| ParseError::element_not_found(selector))?;
     if !element.has_children() {
-        return Err(anyhow!("Element has no children"));
+        return Err(ParseError::EmptyElement {
+            selector: selector.to_string(),
+        });
     }
     Ok(element.text().collect::<String>())
 }
@@ -65,11 +67,9 @@ pub fn parse_text_from_html(document: &Html, selector: &str) -> Result<String> {
 /// - `"#id"` - ID selector
 /// - `".class"` - Class selector
 /// - `"div > span"` - Complex selector
-pub fn html_selector(selector: &str) -> Result<Selector> {
-    match Selector::parse(selector) {
-        Ok(s) => Ok(s),
-        Err(e) => Err(anyhow!("Failed to parse selector: {}", e)),
-    }
+pub fn html_selector(selector: &str) -> Result<Selector, ParseError> {
+    Selector::parse(selector)
+        .map_err(|e| ParseError::invalid_selector(selector, e))
 }
 
 /// Parses a floating-point number from an HTML element.
@@ -100,19 +100,23 @@ pub fn html_selector(selector: &str) -> Result<Selector> {
 /// # Note
 ///
 /// This function ignores negative signs, so "-123.45" becomes 123.45
-pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64> {
-    let selector = html_selector(selector)?;
+pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64, ParseError> {
+    let selector_obj = html_selector(selector)?;
     let element = document
-        .select(&selector)
+        .select(&selector_obj)
         .next()
-        .context("Failed to find value")?;
-    let inner_text = element.text().next().context("Failed to get text")?;
-    inner_text
+        .ok_or_else(|| ParseError::element_not_found(selector))?;
+    let inner_text = element.text().next().ok_or_else(|| ParseError::EmptyElement {
+        selector: selector.to_string(),
+    })?;
+    let numeric_str = inner_text
         .chars()
         .filter(|c| c.is_numeric() || c == &'.')
-        .collect::<String>()
+        .collect::<String>();
+    
+    numeric_str
         .parse::<f64>()
-        .context("Failed to parse value")
+        .map_err(|e| ParseError::number_parse(&numeric_str, e))
 }
 
 /// Normalizes a DateTime to the beginning of the day (00:00:00).
@@ -139,10 +143,13 @@ pub fn parse_f64_from_html(document: &Html, selector: &str) -> Result<f64> {
 ///
 /// Returns an error if the resulting DateTime would be out of range, though this
 /// is extremely unlikely when setting to midnight (00:00:00) using NaiveTime::default().
-pub fn day_of_beginning(date: &DateTime<Local>) -> Result<DateTime<Local>> {
+pub fn day_of_beginning(date: &DateTime<Local>) -> Result<DateTime<Local>, ParseError> {
     date.with_time(NaiveTime::default())
         .single()
-        .ok_or_else(|| anyhow!("Failed to set time to midnight"))
+        .ok_or_else(|| ParseError::datetime_parse(
+            date.to_string(),
+            "Failed to set time to midnight"
+        ))
 }
 
 /// Truncates a floating-point number to an integer.
@@ -385,7 +392,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to find value"));
+                .contains("element not found"));
         }
 
         #[test]
@@ -397,7 +404,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Element has no children"));
+                .contains("has no content"));
         }
 
         #[test]
@@ -409,7 +416,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse selector"));
+                .contains("invalid selector"));
         }
 
         #[test]
@@ -419,7 +426,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse selector"));
+                .contains("invalid selector"));
         }
 
         #[test]
@@ -429,7 +436,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse selector"));
+                .contains("invalid selector"));
         }
 
         #[test]
@@ -441,7 +448,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to find value"));
+                .contains("element not found"));
         }
 
         #[test]
@@ -453,7 +460,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse selector"));
+                .contains("invalid selector"));
         }
 
         #[test]
@@ -465,7 +472,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to get text"));
+                .contains("has no content"));
         }
 
         #[test]
@@ -477,7 +484,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse value"));
+                .contains("failed to parse number"));
         }
 
         #[test]
@@ -489,7 +496,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse value"));
+                .contains("failed to parse number"));
         }
 
         #[test]
@@ -501,7 +508,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Failed to parse value"));
+                .contains("failed to parse number"));
         }
     }
 }

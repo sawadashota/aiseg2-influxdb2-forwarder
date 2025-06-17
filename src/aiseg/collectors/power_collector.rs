@@ -1,6 +1,5 @@
 //! Power metric collector implementation.
 
-use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use scraper::Html;
@@ -16,6 +15,7 @@ use crate::aiseg::pagination::{PageItem, PaginatorBuilder};
 use crate::aiseg::parsers::power_parser::{
     parse_consumption_page, parse_generation_sources, parse_total_power,
 };
+use crate::error::{CollectorError, Result};
 use crate::model::{DataPointBuilder, MetricCollector, PowerStatusBreakdownMetric};
 
 // Implement PageItem for PowerStatusBreakdownMetric to support pagination
@@ -42,17 +42,20 @@ impl PowerMetricCollector {
 
     /// Collects metrics from the main electricity flow page.
     async fn collect_from_main_page(&self) -> MetricResult {
-        let response = self.fetch_page("/page/electricflow/111").await?;
+        let response = self.fetch_page("/page/electricflow/111").await
+            .map_err(CollectorError::Source)?;
         let document = Html::parse_document(&response);
 
         let mut metrics = Vec::new();
 
         // Parse and create total metrics
-        let (gen_kw, cons_kw) = parse_total_power(&document)?;
+        let (gen_kw, cons_kw) = parse_total_power(&document)
+            .map_err(CollectorError::Source)?;
         metrics.extend(create_total_power_metrics(gen_kw, cons_kw));
 
         // Parse and create generation breakdown
-        let sources = parse_generation_sources(&document)?;
+        let sources = parse_generation_sources(&document)
+            .map_err(CollectorError::Source)?;
         metrics.extend(create_generation_metrics(sources));
 
         Ok(metrics)
@@ -73,9 +76,11 @@ impl PowerMetricCollector {
                 })
             })
             .parse_with(parse_consumption_page)
-            .build()?;
+            .build()
+            .map_err(CollectorError::Source)?;
 
-        let all_items = paginator.collect_all().await?;
+        let all_items = paginator.collect_all().await
+            .map_err(CollectorError::Source)?;
 
         // Merge duplicates and convert to metrics
         let merged = merge_power_breakdown_metrics(all_items);
@@ -96,7 +101,7 @@ impl CollectorBase for PowerMetricCollector {
 
 #[async_trait]
 impl MetricCollector for PowerMetricCollector {
-    async fn collect(&self, _timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+    async fn collect(&self, _timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         let mut all_metrics = Vec::new();
 
         // Collect from main page

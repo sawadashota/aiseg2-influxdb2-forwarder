@@ -3,18 +3,18 @@
 //! This module provides reusable pagination functionality to reduce duplication
 //! across collectors that need to iterate through multiple pages of data.
 
-use anyhow::Result;
+use crate::error::{AisegError, Result};
 use scraper::Html;
 use std::future::Future;
 use std::pin::Pin;
 
 /// Type alias for the fetch function used in pagination.
 pub type FetchFn<'a> = Box<
-    dyn Fn(usize) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> + Send + Sync + 'a,
+    dyn Fn(usize) -> Pin<Box<dyn Future<Output = Result<String, AisegError>> + Send + 'a>> + Send + Sync + 'a,
 >;
 
 /// Type alias for the parse function used in pagination.
-pub type ParseFn<'a, T> = Box<dyn Fn(&Html) -> Result<Vec<T>> + Send + Sync + 'a>;
+pub type ParseFn<'a, T> = Box<dyn Fn(&Html) -> Result<Vec<T>, AisegError> + Send + Sync + 'a>;
 
 /// Configuration for pagination behavior.
 #[derive(Clone)]
@@ -53,11 +53,11 @@ impl<'a, T: PageItem> Paginator<'a, T> {
     #[allow(dead_code)]
     pub fn new<F, P>(config: PaginationConfig, fetch_fn: F, parse_fn: P) -> Self
     where
-        F: Fn(usize) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>
+        F: Fn(usize) -> Pin<Box<dyn Future<Output = Result<String, AisegError>> + Send + 'a>>
             + Send
             + Sync
             + 'a,
-        P: Fn(&Html) -> Result<Vec<T>> + Send + Sync + 'a,
+        P: Fn(&Html) -> Result<Vec<T>, AisegError> + Send + Sync + 'a,
     {
         Self {
             config,
@@ -67,7 +67,7 @@ impl<'a, T: PageItem> Paginator<'a, T> {
     }
 
     /// Collects all items from all pages.
-    pub async fn collect_all(&self) -> Result<Vec<T>> {
+    pub async fn collect_all(&self) -> Result<Vec<T>, AisegError> {
         let mut all_items = Vec::new();
         let mut last_page_items: Vec<T> = Vec::new();
 
@@ -142,7 +142,7 @@ impl<'a, T: PageItem> PaginatorBuilder<'a, T> {
     /// Sets the fetch function for retrieving page content.
     pub fn fetch_with<F>(mut self, fetch_fn: F) -> Self
     where
-        F: Fn(usize) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>
+        F: Fn(usize) -> Pin<Box<dyn Future<Output = Result<String, AisegError>> + Send + 'a>>
             + Send
             + Sync
             + 'a,
@@ -154,20 +154,20 @@ impl<'a, T: PageItem> PaginatorBuilder<'a, T> {
     /// Sets the parse function for extracting items from HTML.
     pub fn parse_with<P>(mut self, parse_fn: P) -> Self
     where
-        P: Fn(&Html) -> Result<Vec<T>> + Send + Sync + 'a,
+        P: Fn(&Html) -> Result<Vec<T>, AisegError> + Send + Sync + 'a,
     {
         self.parse_fn = Some(Box::new(parse_fn));
         self
     }
 
     /// Builds the paginator.
-    pub fn build(self) -> Result<Paginator<'a, T>> {
+    pub fn build(self) -> Result<Paginator<'a, T>, AisegError> {
         let fetch_fn = self
             .fetch_fn
-            .ok_or_else(|| anyhow::anyhow!("Fetch function not set"))?;
+            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Fetch function not set".to_string())))?;
         let parse_fn = self
             .parse_fn
-            .ok_or_else(|| anyhow::anyhow!("Parse function not set"))?;
+            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Parse function not set".to_string())))?;
 
         Ok(Paginator {
             config: self.config,
@@ -232,14 +232,14 @@ mod tests {
             })
             .parse_with(|document| {
                 let selector = crate::aiseg::helper::html_selector(".item")?;
-                let items: Result<Vec<TestItem>> = document
+                let items: Result<Vec<TestItem>, AisegError> = document
                     .select(&selector)
                     .map(|element| {
                         let id = element
                             .value()
                             .attr("data-id")
                             .and_then(|s| s.parse().ok())
-                            .ok_or_else(|| anyhow::anyhow!("Missing data-id"))?;
+                            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Missing data-id attribute".to_string())))?;
                         let name = element.text().collect::<String>();
                         Ok(TestItem { id, name })
                     })
@@ -282,14 +282,14 @@ mod tests {
             })
             .parse_with(|document| {
                 let selector = crate::aiseg::helper::html_selector(".item")?;
-                let items: Result<Vec<TestItem>> = document
+                let items: Result<Vec<TestItem>, AisegError> = document
                     .select(&selector)
                     .map(|element| {
                         let id = element
                             .value()
                             .attr("data-id")
                             .and_then(|s| s.parse().ok())
-                            .ok_or_else(|| anyhow::anyhow!("Missing data-id"))?;
+                            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Missing data-id attribute".to_string())))?;
                         let name = element.text().collect::<String>();
                         Ok(TestItem { id, name })
                     })
@@ -326,14 +326,14 @@ mod tests {
             })
             .parse_with(|document| {
                 let selector = crate::aiseg::helper::html_selector(".item")?;
-                let items: Result<Vec<TestItem>> = document
+                let items: Result<Vec<TestItem>, AisegError> = document
                     .select(&selector)
                     .map(|element| {
                         let id = element
                             .value()
                             .attr("data-id")
                             .and_then(|s| s.parse().ok())
-                            .ok_or_else(|| anyhow::anyhow!("Missing data-id"))?;
+                            .ok_or_else(|| AisegError::Parse(crate::error::ParseError::UnexpectedStructure("Missing data-id attribute".to_string())))?;
                         let name = element.text().collect::<String>();
                         Ok(TestItem { id, name })
                     })

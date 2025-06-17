@@ -1,7 +1,7 @@
 //! Mock implementations of MetricCollector for testing.
 
+use crate::error::{CollectorError, Result, StorageError};
 use crate::model::{DataPointBuilder, Measurement, MetricCollector, PowerStatusMetric};
-use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use influxdb2::models::DataPoint;
@@ -58,9 +58,9 @@ impl MetricCollector for MockMetricCollector {
     async fn collect(
         &self,
         _timestamp: DateTime<Local>,
-    ) -> anyhow::Result<Vec<Box<dyn DataPointBuilder>>> {
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         if self.should_fail {
-            anyhow::bail!(self.error_message.clone())
+            Err(CollectorError::ValidationFailed(self.error_message.clone()))
         } else {
             Ok((self.create_data)())
         }
@@ -93,11 +93,11 @@ impl MetricCollector for CountingMockCollector {
     async fn collect(
         &self,
         _timestamp: DateTime<Local>,
-    ) -> anyhow::Result<Vec<Box<dyn DataPointBuilder>>> {
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
 
         if self.should_fail {
-            anyhow::bail!("Mock collector configured to fail")
+            Err(CollectorError::ValidationFailed("Mock collector configured to fail".to_string()))
         } else {
             Ok(Vec::new())
         }
@@ -121,7 +121,7 @@ impl MetricCollector for TimeoutMockCollector {
     async fn collect(
         &self,
         _timestamp: DateTime<Local>,
-    ) -> anyhow::Result<Vec<Box<dyn DataPointBuilder>>> {
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         tokio::time::sleep(self.timeout_duration).await;
         Ok(Vec::new())
     }
@@ -158,7 +158,7 @@ impl MetricCollector for TimeSensitiveMockCollector {
     async fn collect(
         &self,
         timestamp: DateTime<Local>,
-    ) -> anyhow::Result<Vec<Box<dyn DataPointBuilder>>> {
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         for (ts, create_fn) in &self.results {
             if *ts == timestamp {
                 return Ok(create_fn());
@@ -175,8 +175,8 @@ impl MetricCollector for TimeSensitiveMockCollector {
 pub struct FailingDataPointBuilder;
 
 impl DataPointBuilder for FailingDataPointBuilder {
-    fn to_point(&self) -> Result<DataPoint> {
-        Err(anyhow!("Mock conversion failure"))
+    fn to_point(&self) -> Result<DataPoint, StorageError> {
+        Err(StorageError::InvalidDataPoint("Mock conversion failure".to_string()))
     }
 }
 

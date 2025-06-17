@@ -4,8 +4,8 @@
 //! to reduce code duplication and ensure consistent behavior.
 
 use crate::aiseg::Client;
+use crate::error::{AisegError, Result};
 use crate::model::DataPointBuilder;
-use anyhow::Result;
 use std::sync::Arc;
 
 /// Base trait for AiSEG2 collectors with common functionality.
@@ -14,7 +14,7 @@ pub trait CollectorBase {
     fn client(&self) -> &Arc<Client>;
 
     /// Fetches a page from AiSEG2 and returns the HTML response.
-    async fn fetch_page(&self, path: &str) -> Result<String> {
+    async fn fetch_page(&self, path: &str) -> Result<String, AisegError> {
         self.client().get(path).await
     }
 }
@@ -60,7 +60,7 @@ impl PaginationState {
 }
 
 /// Result type for metric collection operations.
-pub type MetricResult = Result<Vec<Box<dyn DataPointBuilder>>>;
+pub type MetricResult = std::result::Result<Vec<Box<dyn DataPointBuilder>>, crate::error::CollectorError>;
 
 /// Merges duplicate metrics by summing their values.
 ///

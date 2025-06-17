@@ -1,6 +1,6 @@
 use crate::circuit_breaker::CircuitBreaker;
+use crate::error::{CollectorError, Result};
 use crate::model::{DataPointBuilder, MetricCollector};
-use anyhow::Result;
 use chrono::{DateTime, Local};
 use std::sync::Arc;
 
@@ -43,13 +43,14 @@ impl MetricCollector for CircuitProtectedCollector {
     ///
     /// If the circuit is open, returns an empty result without calling the underlying collector.
     /// Records successes and failures to update the circuit breaker state.
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         // Check if the circuit allows this call
         if !self.circuit_breaker.call_allowed().await {
             tracing::debug!(
                 collector = %self.name,
                 "Circuit breaker is open, skipping collection"
             );
+            // Instead of returning an error, return empty to maintain stability
             return Ok(vec![]);
         }
 

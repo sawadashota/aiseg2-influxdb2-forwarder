@@ -1,6 +1,8 @@
 //! HTML parsing for AiSEG2 climate pages.
 
-use anyhow::Result;
+use crate::error::{AisegError, Result};
+#[cfg(test)]
+use crate::error::ParseError;
 use chrono::{DateTime, Local};
 use scraper::Html;
 
@@ -14,8 +16,6 @@ use crate::aiseg::helper::html_selector;
 use crate::aiseg::html_parsing::extract_numeric_from_digit_elements;
 #[cfg(test)]
 use crate::aiseg::metrics::climate::create_climate_metrics;
-#[cfg(test)]
-use anyhow::Context;
 
 /// Parses climate data from a specific base element.
 ///
@@ -31,22 +31,24 @@ fn parse_climate_location(
     document: &Html,
     base_id: &str,
     timestamp: DateTime<Local>,
-) -> Result<[ClimateStatusMetric; 2]> {
+) -> Result<[ClimateStatusMetric; 2], ParseError> {
     let base_selector = html_selector(base_id)?;
     let base_element = document
         .select(&base_selector)
         .next()
-        .context("Failed to find base element")?;
+        .ok_or_else(|| ParseError::element_not_found(base_id))?;
 
     // Extract location name
     let name_selector = html_selector(".txt_name")?;
     let name = base_element
         .select(&name_selector)
         .next()
-        .context("Failed to find name")?
+        .ok_or_else(|| ParseError::element_not_found(".txt_name"))?
         .text()
         .next()
-        .context("Failed to get text")?
+        .ok_or_else(|| ParseError::EmptyElement {
+            selector: ".txt_name".to_string(),
+        })?
         .to_string();
 
     // Find num_wrapper element
@@ -54,7 +56,7 @@ fn parse_climate_location(
     let num_wrapper = base_element
         .select(&num_wrapper_selector)
         .next()
-        .context("Failed to find num_wrapper")?;
+        .ok_or_else(|| ParseError::element_not_found(".num_wrapper"))?;
 
     // Extract temperature
     let temp_selector = html_selector(r#"[id^="num_ond_"][class*="num no"]"#)?;
@@ -83,7 +85,7 @@ fn parse_climate_location(
 pub fn parse_climate_page(
     document: &Html,
     timestamp: DateTime<Local>,
-) -> Result<Vec<ClimateStatusMetric>> {
+) -> Result<Vec<ClimateStatusMetric>, AisegError> {
     // Use trait-based parser adapter
     let parser = ParserAdapterBuilder::climate_page();
     parser.parse_with_context(document, timestamp)

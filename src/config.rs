@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use crate::error::{ConfigError, Result};
 use serde_derive::Deserialize;
 use std::str::FromStr;
 
@@ -38,11 +38,8 @@ impl AppConfig {
 /// # Returns
 /// - `Ok(AppConfig)` if configuration loads successfully
 /// - `Err` if required environment variables are missing or invalid
-pub(crate) fn load_app_config() -> Result<AppConfig> {
-    match envy::from_env::<AppConfig>() {
-        Ok(config) => Ok(config),
-        Err(err) => Err(anyhow!("Failed to load AppConfig: {}", err)),
-    }
+pub(crate) fn load_app_config() -> Result<AppConfig, ConfigError> {
+    envy::from_env::<AppConfig>().map_err(ConfigError::env_parse)
 }
 
 /// Default interval for collecting real-time status metrics (5 seconds).
@@ -154,11 +151,9 @@ pub struct CircuitBreakerConfig {
 /// # Returns
 /// - `Ok(CollectorConfig)` with loaded or default values
 /// - `Err` if environment variables contain invalid values
-pub fn load_collector_config() -> Result<CollectorConfig> {
-    match envy::prefixed("COLLECTOR_").from_env::<CollectorConfig>() {
-        Ok(config) => Ok(config),
-        Err(err) => Err(anyhow!("Failed to load CollectorConfig: {}", err)),
-    }
+pub fn load_collector_config() -> Result<CollectorConfig, ConfigError> {
+    envy::prefixed("COLLECTOR_").from_env::<CollectorConfig>()
+        .map_err(ConfigError::env_parse)
 }
 
 /// Configuration for connecting to the AiSEG2 system.
@@ -186,11 +181,9 @@ pub struct Aiseg2Config {
 /// # Returns
 /// - `Ok(Aiseg2Config)` if all required variables are present
 /// - `Err` if any required variables are missing
-pub(crate) fn load_aiseg_config() -> Result<Aiseg2Config> {
-    match envy::prefixed("AISEG2_").from_env::<Aiseg2Config>() {
-        Ok(config) => Ok(config),
-        Err(err) => Err(anyhow!("Failed to load AisegConfig: {}", err)),
-    }
+pub(crate) fn load_aiseg_config() -> Result<Aiseg2Config, ConfigError> {
+    envy::prefixed("AISEG2_").from_env::<Aiseg2Config>()
+        .map_err(ConfigError::env_parse)
 }
 
 /// Configuration for connecting to InfluxDB 2.x.
@@ -221,11 +214,9 @@ pub struct InfluxConfig {
 /// # Returns
 /// - `Ok(InfluxConfig)` if all required variables are present
 /// - `Err` if any required variables are missing
-pub fn load_influx_config() -> Result<InfluxConfig> {
-    match envy::prefixed("INFLUXDB_").from_env::<InfluxConfig>() {
-        Ok(config) => Ok(config),
-        Err(err) => Err(anyhow!("Failed to load InfluxConfig: {}", err)),
-    }
+pub fn load_influx_config() -> Result<InfluxConfig, ConfigError> {
+    envy::prefixed("INFLUXDB_").from_env::<InfluxConfig>()
+        .map_err(ConfigError::env_parse)
 }
 
 /// Loads circuit breaker configuration from environment variables.
@@ -239,11 +230,9 @@ pub fn load_influx_config() -> Result<InfluxConfig> {
 /// # Returns
 /// - `Ok(CircuitBreakerConfig)` with loaded or default values
 /// - `Err` if environment variables contain invalid values
-pub fn load_circuit_breaker_config() -> Result<CircuitBreakerConfig> {
-    match envy::prefixed("CIRCUIT_BREAKER_").from_env::<CircuitBreakerConfig>() {
-        Ok(config) => Ok(config),
-        Err(err) => Err(anyhow!("Failed to load CircuitBreakerConfig: {}", err)),
-    }
+pub fn load_circuit_breaker_config() -> Result<CircuitBreakerConfig, ConfigError> {
+    envy::prefixed("CIRCUIT_BREAKER_").from_env::<CircuitBreakerConfig>()
+        .map_err(ConfigError::env_parse)
 }
 
 #[cfg(test)]
@@ -412,7 +401,8 @@ mod tests {
             let result = load_aiseg_config();
             assert!(result.is_err());
             let err = result.unwrap_err();
-            assert!(err.to_string().contains("Failed to load AisegConfig"));
+            // The error should be about parsing environment variables
+            assert!(err.to_string().contains("failed to parse environment variables"));
         });
     }
 
@@ -473,7 +463,7 @@ mod tests {
                 let result = load_influx_config();
                 assert!(result.is_err());
                 let err = result.unwrap_err();
-                assert!(err.to_string().contains("Failed to load InfluxConfig"));
+                assert!(err.to_string().contains("failed to parse environment variables"));
             },
         );
     }

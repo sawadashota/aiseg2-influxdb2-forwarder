@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::{CollectorError, Result, StorageError};
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use influxdb2::models::DataPoint;
@@ -14,7 +14,7 @@ pub trait DataPointBuilder: Send + Sync {
     /// # Returns
     /// - `Ok(DataPoint)` if conversion succeeds
     /// - `Err` if the metric data cannot be converted to a valid DataPoint
-    fn to_point(&self) -> Result<DataPoint>;
+    fn to_point(&self) -> Result<DataPoint, StorageError>;
 }
 
 /// Trait for types that can collect metrics from AiSEG2.
@@ -31,5 +31,5 @@ pub trait MetricCollector: Send + Sync {
     ///
     /// # Returns
     /// A future that resolves to a vector of DataPointBuilder instances
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>>;
+    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError>;
 }

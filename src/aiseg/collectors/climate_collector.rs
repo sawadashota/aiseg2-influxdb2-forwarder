@@ -1,6 +1,5 @@
 //! Climate metric collector implementation.
 
-use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use std::sync::Arc;
@@ -10,6 +9,7 @@ use crate::aiseg::collector_base::CollectorBase;
 use crate::aiseg::metrics::climate::climate_metrics_to_builders;
 use crate::aiseg::pagination::{PageItem, PaginatorBuilder};
 use crate::aiseg::parsers::climate_parser::parse_climate_page;
+use crate::error::{CollectorError, Result};
 use crate::model::{ClimateStatusMetric, DataPointBuilder, MetricCollector};
 
 // Implement PageItem for ClimateStatusMetric to support pagination
@@ -43,7 +43,7 @@ impl CollectorBase for ClimateMetricCollector {
 
 #[async_trait]
 impl MetricCollector for ClimateMetricCollector {
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
         let client = Arc::clone(&self.client);
 
         let paginator = PaginatorBuilder::new()
@@ -57,9 +57,11 @@ impl MetricCollector for ClimateMetricCollector {
                 })
             })
             .parse_with(move |document| parse_climate_page(document, timestamp))
-            .build()?;
+            .build()
+            .map_err(CollectorError::Source)?;
 
-        let all_metrics = paginator.collect_all().await?;
+        let all_metrics = paginator.collect_all().await
+            .map_err(CollectorError::Source)?;
         Ok(climate_metrics_to_builders(all_metrics))
     }
 }

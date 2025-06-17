@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use crate::error::{Result, StorageError};
 use chrono::{DateTime, Local};
 use influxdb2::models::DataPoint;
 
@@ -20,15 +20,12 @@ pub struct PowerStatusMetric {
 }
 
 impl DataPointBuilder for PowerStatusMetric {
-    fn to_point(&self) -> Result<DataPoint> {
-        match DataPoint::builder(self.measurement.to_string().as_str())
+    fn to_point(&self) -> Result<DataPoint, StorageError> {
+        DataPoint::builder(self.measurement.to_string().as_str())
             .tag("summary", self.name.clone())
             .field("value", self.value)
             .build()
-        {
-            Ok(point) => Ok(point),
-            Err(e) => Err(anyhow!("Failed to build DataPoint: {}", e)),
-        }
+            .map_err(|e| StorageError::InvalidDataPoint(format!("Failed to build PowerStatusMetric: {}", e)))
     }
 }
 
@@ -50,16 +47,13 @@ pub struct PowerStatusBreakdownMetric {
 }
 
 impl DataPointBuilder for PowerStatusBreakdownMetric {
-    fn to_point(&self) -> Result<DataPoint> {
-        match DataPoint::builder(self.measurement.to_string().as_str())
+    fn to_point(&self) -> Result<DataPoint, StorageError> {
+        DataPoint::builder(self.measurement.to_string().as_str())
             .tag("detail-type", self.category.to_string())
             .tag("detail-section", self.name.clone())
             .field("value", self.value)
             .build()
-        {
-            Ok(point) => Ok(point),
-            Err(e) => Err(anyhow!("Failed to build DataPoint: {}", e)),
-        }
+            .map_err(|e| StorageError::InvalidDataPoint(format!("Failed to build PowerStatusBreakdownMetric: {}", e)))
     }
 }
 
@@ -81,20 +75,17 @@ pub struct PowerTotalMetric {
 }
 
 impl DataPointBuilder for PowerTotalMetric {
-    fn to_point(&self) -> Result<DataPoint> {
-        match DataPoint::builder(self.measurement.to_string().as_str())
+    fn to_point(&self) -> Result<DataPoint, StorageError> {
+        let timestamp = self.date
+            .timestamp_nanos_opt()
+            .ok_or_else(|| StorageError::InvalidDataPoint("Timestamp overflow".to_string()))?;
+        
+        DataPoint::builder(self.measurement.to_string().as_str())
             .tag("detail-section", self.name.clone())
             .field("value", self.value)
-            .timestamp(
-                self.date
-                    .timestamp_nanos_opt()
-                    .ok_or_else(|| anyhow!("Timestamp overflow"))?,
-            )
+            .timestamp(timestamp)
             .build()
-        {
-            Ok(point) => Ok(point),
-            Err(e) => Err(anyhow!("Failed to build DataPoint: {}", e)),
-        }
+            .map_err(|e| StorageError::InvalidDataPoint(format!("Failed to build PowerTotalMetric: {}", e)))
     }
 }
 
@@ -117,20 +108,17 @@ pub struct ClimateStatusMetric {
 }
 
 impl DataPointBuilder for ClimateStatusMetric {
-    fn to_point(&self) -> Result<DataPoint> {
-        match DataPoint::builder(self.measurement.to_string().as_str())
+    fn to_point(&self) -> Result<DataPoint, StorageError> {
+        let timestamp = self.timestamp
+            .timestamp_nanos_opt()
+            .ok_or_else(|| StorageError::InvalidDataPoint("Timestamp overflow".to_string()))?;
+        
+        DataPoint::builder(self.measurement.to_string().as_str())
             .tag("detail-type", self.category.to_string())
             .tag("detail-section", self.name.clone())
             .field("value", self.value)
-            .timestamp(
-                self.timestamp
-                    .timestamp_nanos_opt()
-                    .ok_or_else(|| anyhow!("Timestamp overflow"))?,
-            )
+            .timestamp(timestamp)
             .build()
-        {
-            Ok(point) => Ok(point),
-            Err(e) => Err(anyhow!("Failed to build DataPoint: {}", e)),
-        }
+            .map_err(|e| StorageError::InvalidDataPoint(format!("Failed to build ClimateStatusMetric: {}", e)))
     }
 }

@@ -3,7 +3,7 @@
 //! This module provides common HTML parsing functions used across different collectors
 //! to reduce code duplication and ensure consistent parsing behavior.
 
-use anyhow::{anyhow, Context, Result};
+use crate::error::{ParseError, Result};
 use scraper::{ElementRef, Html};
 use std::str::FromStr;
 
@@ -35,7 +35,7 @@ use crate::aiseg::helper::{
 /// // Extract a string value
 /// let name: String = extract_value(&document, "#device_name")?;
 /// ```
-pub fn extract_value<T: FromStr>(document: &Html, selector: &str) -> Result<T>
+pub fn extract_value<T: FromStr>(document: &Html, selector: &str) -> Result<T, ParseError>
 where
     T::Err: std::error::Error + Send + Sync + 'static,
 {
@@ -43,18 +43,12 @@ where
     let element = document
         .select(&selector_obj)
         .next()
-        .with_context(|| format!("Element not found: {}", selector))?;
+        .ok_or_else(|| ParseError::element_not_found(selector))?;
 
     let text = element.text().collect::<String>().trim().to_string();
 
-    text.parse::<T>().map_err(|e| {
-        anyhow!(
-            "Failed to parse '{}' from selector '{}': {}",
-            text,
-            selector,
-            e
-        )
-    })
+    text.parse::<T>()
+        .map_err(|e| ParseError::number_parse(&text, e))
 }
 
 /// Extracts a value with error recovery, returning a default if parsing fails.
@@ -94,7 +88,7 @@ where
 /// * `Ok(T)` - The first successfully parsed value
 /// * `Err` - If all selectors fail
 #[allow(dead_code)]
-pub fn extract_value_with_fallbacks<T: FromStr>(document: &Html, selectors: &[&str]) -> Result<T>
+pub fn extract_value_with_fallbacks<T: FromStr>(document: &Html, selectors: &[&str]) -> Result<T, ParseError>
 where
     T::Err: std::error::Error + Send + Sync + 'static,
 {
@@ -104,10 +98,10 @@ where
         }
     }
 
-    Err(anyhow!(
+    Err(ParseError::UnexpectedStructure(format!(
         "Failed to extract value from any selector: {:?}",
         selectors
-    ))
+    )))
 }
 
 /// Parses a graph page with title and value elements.
@@ -126,7 +120,7 @@ pub fn parse_graph_page(
     document: &Html,
     title_selector: Option<&str>,
     value_selector: Option<&str>,
-) -> Result<(String, i64)> {
+) -> Result<(String, i64), ParseError> {
     let title_sel = title_selector.unwrap_or("#h_title");
     let value_sel = value_selector.unwrap_or("#val_kwh");
 
@@ -149,7 +143,7 @@ pub fn parse_graph_page(
 /// # Returns
 /// Power value in watts (as i64)
 #[allow(dead_code)]
-pub fn parse_power_value(document: &Html, selector: &str) -> Result<i64> {
+pub fn parse_power_value(document: &Html, selector: &str) -> Result<i64, ParseError> {
     let kw_value = extract_value::<f64>(document, selector)?;
     Ok(kilowatts_to_watts(kw_value))
 }
@@ -170,7 +164,7 @@ pub fn parse_power_value(document: &Html, selector: &str) -> Result<i64> {
 /// - Element 0: tens place
 /// - Element 1: ones place  
 /// - Element 2: tenths place (after decimal)
-pub fn extract_numeric_from_digit_elements<'a, I>(elements: I) -> Result<f64>
+pub fn extract_numeric_from_digit_elements<'a, I>(elements: I) -> Result<f64, ParseError>
 where
     I: Iterator<Item = ElementRef<'a>>,
 {
@@ -194,7 +188,7 @@ where
     let value_str = format!("{}{}.{}", digits[0], digits[1], digits[2]);
     value_str
         .parse::<f64>()
-        .context("Failed to parse numeric value from digit elements")
+        .map_err(|e| ParseError::number_parse(&value_str, e))
 }
 
 /// Parses a single consumption device entry from HTML.
@@ -205,7 +199,7 @@ where
 ///
 /// # Returns
 /// A tuple of (device_name, power_value) or None if the element doesn't exist
-pub fn parse_consumption_device(document: &Html, stage_id: &str) -> Result<Option<(String, f64)>> {
+pub fn parse_consumption_device(document: &Html, stage_id: &str) -> Result<Option<(String, f64)>, ParseError> {
     let device_selector = format!("{} > div.c_device", stage_id);
     let device_name = match parse_text_from_html(document, &device_selector) {
         Ok(name) => name,
@@ -226,7 +220,7 @@ pub fn parse_consumption_device(document: &Html, stage_id: &str) -> Result<Optio
 ///
 /// # Returns
 /// A vector of tuples (name, value) for each generation source found
-pub fn parse_generation_details(document: &Html, max_items: usize) -> Result<Vec<(String, f64)>> {
+pub fn parse_generation_details(document: &Html, max_items: usize) -> Result<Vec<(String, f64)>, ParseError> {
     let mut results = Vec::with_capacity(max_items);
 
     for i in 1..=max_items {
@@ -257,12 +251,12 @@ pub fn parse_generation_details(document: &Html, max_items: usize) -> Result<Vec
 /// # Returns
 /// A tuple of (value, unit_text) where unit_text may be empty
 #[allow(dead_code)]
-pub fn parse_numeric_with_unit(document: &Html, selector: &str) -> Result<(f64, String)> {
-    let selector = html_selector(selector)?;
+pub fn parse_numeric_with_unit(document: &Html, selector: &str) -> Result<(f64, String), ParseError> {
+    let selector_obj = html_selector(selector)?;
     let element = document
-        .select(&selector)
+        .select(&selector_obj)
         .next()
-        .context("Failed to find element")?;
+        .ok_or_else(|| ParseError::element_not_found(selector))?;
 
     let full_text = element.text().collect::<String>();
 
@@ -274,7 +268,7 @@ pub fn parse_numeric_with_unit(document: &Html, selector: &str) -> Result<(f64, 
 
     let value = numeric_str
         .parse::<f64>()
-        .context("Failed to parse numeric value")?;
+        .map_err(|e| ParseError::number_parse(&numeric_str, e))?;
 
     // Extract unit part (everything after the last digit)
     let unit_start = full_text
@@ -305,18 +299,18 @@ pub fn parse_item_list<T, F>(
     container_selector: &str,
     item_selector: &str,
     parse_item: F,
-) -> Result<Vec<T>>
+) -> Result<Vec<T>, ParseError>
 where
-    F: Fn(ElementRef) -> Result<T>,
+    F: Fn(ElementRef) -> Result<T, ParseError>,
 {
     let container_sel = html_selector(container_selector)?;
     let container = document
         .select(&container_sel)
         .next()
-        .context("Container element not found")?;
+        .ok_or_else(|| ParseError::element_not_found(container_selector))?;
 
     let item_sel = html_selector(item_selector)?;
-    let items: Result<Vec<T>> = container.select(&item_sel).map(parse_item).collect();
+    let items: Result<Vec<T>, ParseError> = container.select(&item_sel).map(parse_item).collect();
 
     items
 }
@@ -328,7 +322,7 @@ mod tests {
     #[test]
     fn test_extract_value_string() {
         let html = Html::parse_document(r#"<div id="title">Test Title</div>"#);
-        let result: Result<String> = extract_value(&html, "#title");
+        let result: Result<String, ParseError> = extract_value(&html, "#title");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Test Title");
     }
@@ -336,7 +330,7 @@ mod tests {
     #[test]
     fn test_extract_value_f64() {
         let html = Html::parse_document(r#"<div class="value">123.45</div>"#);
-        let result: Result<f64> = extract_value(&html, ".value");
+        let result: Result<f64, ParseError> = extract_value(&html, ".value");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 123.45);
     }
@@ -344,7 +338,7 @@ mod tests {
     #[test]
     fn test_extract_value_i32() {
         let html = Html::parse_document(r#"<span id="count">42</span>"#);
-        let result: Result<i32> = extract_value(&html, "#count");
+        let result: Result<i32, ParseError> = extract_value(&html, "#count");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
     }
@@ -352,7 +346,7 @@ mod tests {
     #[test]
     fn test_extract_value_with_whitespace() {
         let html = Html::parse_document(r#"<div class="num">  789  </div>"#);
-        let result: Result<i32> = extract_value(&html, ".num");
+        let result: Result<i32, ParseError> = extract_value(&html, ".num");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 789);
     }
@@ -360,20 +354,20 @@ mod tests {
     #[test]
     fn test_extract_value_element_not_found() {
         let html = Html::parse_document(r#"<div>Content</div>"#);
-        let result: Result<String> = extract_value(&html, "#missing");
+        let result: Result<String, ParseError> = extract_value(&html, "#missing");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Element not found"));
+            .contains("element not found"));
     }
 
     #[test]
     fn test_extract_value_parse_error() {
         let html = Html::parse_document(r#"<div id="val">not_a_number</div>"#);
-        let result: Result<f64> = extract_value(&html, "#val");
+        let result: Result<f64, ParseError> = extract_value(&html, "#val");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to parse"));
+        assert!(result.unwrap_err().to_string().contains("failed to parse number"));
     }
 
     #[test]
@@ -394,7 +388,7 @@ mod tests {
     fn test_extract_value_with_fallbacks_first_succeeds() {
         let html =
             Html::parse_document(r#"<div id="primary">100</div><div id="secondary">200</div>"#);
-        let result: Result<i32> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
+        let result: Result<i32, ParseError> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 100);
     }
@@ -402,7 +396,7 @@ mod tests {
     #[test]
     fn test_extract_value_with_fallbacks_second_succeeds() {
         let html = Html::parse_document(r#"<div id="secondary">200</div>"#);
-        let result: Result<i32> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
+        let result: Result<i32, ParseError> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 200);
     }
@@ -410,12 +404,9 @@ mod tests {
     #[test]
     fn test_extract_value_with_fallbacks_all_fail() {
         let html = Html::parse_document(r#"<div>Nothing here</div>"#);
-        let result: Result<i32> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
+        let result: Result<i32, ParseError> = extract_value_with_fallbacks(&html, &["#primary", "#secondary"]);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to extract value from any selector"));
+        assert!(matches!(result.unwrap_err(), ParseError::UnexpectedStructure(_)));
     }
 
     #[test]
@@ -562,8 +553,9 @@ mod tests {
             let id = element
                 .value()
                 .attr("data-id")
-                .ok_or_else(|| anyhow::anyhow!("Missing data-id"))?
-                .parse::<u32>()?;
+                .ok_or_else(|| ParseError::UnexpectedStructure("Missing data-id attribute".to_string()))?
+                .parse::<u32>()
+                .map_err(|e| ParseError::number_parse("data-id", e))?;
             let text = element.text().collect::<String>();
             Ok((id, text))
         });
@@ -599,7 +591,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Failed to parse numeric value"));
+            .contains("failed to parse number"));
 
         // Test missing element
         let result2 = parse_numeric_with_unit(&html, ".nonexistent");
@@ -607,6 +599,6 @@ mod tests {
         assert!(result2
             .unwrap_err()
             .to_string()
-            .contains("Failed to find element"));
+            .contains("element not found"));
     }
 }

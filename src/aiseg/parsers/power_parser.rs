@@ -1,6 +1,6 @@
 //! HTML parsing for AiSEG2 power pages.
 
-use anyhow::Result;
+use crate::error::{AisegError, Result};
 use scraper::Html;
 
 use crate::aiseg::parser_adapters::ParserAdapterBuilder;
@@ -14,7 +14,7 @@ use crate::model::PowerStatusBreakdownMetric;
 ///
 /// # Returns
 /// Tuple of (generation_kw, consumption_kw)
-pub fn parse_total_power(document: &Html) -> Result<(f64, f64)> {
+pub fn parse_total_power(document: &Html) -> Result<(f64, f64), AisegError> {
     // Use trait-based parser adapter
     let parser = ParserAdapterBuilder::total_power();
     parser.parse(document)
@@ -27,7 +27,7 @@ pub fn parse_total_power(document: &Html) -> Result<(f64, f64)> {
 ///
 /// # Returns
 /// Vector of (source_name, value_in_watts) tuples
-pub fn parse_generation_sources(document: &Html) -> Result<Vec<(String, f64)>> {
+pub fn parse_generation_sources(document: &Html) -> Result<Vec<(String, f64)>, AisegError> {
     // Use trait-based parser adapter
     let parser = ParserAdapterBuilder::generation_sources();
     parser.parse(document)
@@ -40,7 +40,7 @@ pub fn parse_generation_sources(document: &Html) -> Result<Vec<(String, f64)>> {
 ///
 /// # Returns
 /// Vector of consumption metrics found on the page
-pub fn parse_consumption_page(document: &Html) -> Result<Vec<PowerStatusBreakdownMetric>> {
+pub fn parse_consumption_page(document: &Html) -> Result<Vec<PowerStatusBreakdownMetric>, AisegError> {
     // Use trait-based parser adapter
     let parser = ParserAdapterBuilder::consumption_page();
     parser.parse(document)

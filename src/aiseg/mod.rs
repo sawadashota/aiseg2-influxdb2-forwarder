@@ -9,6 +9,8 @@ mod collectors;
 mod html_parsing;
 mod metrics;
 mod pagination;
+mod parser_adapters;
+mod parser_traits;
 mod parsers;
 mod query_builder;
 

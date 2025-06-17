@@ -3,8 +3,8 @@
 use anyhow::Result;
 use scraper::Html;
 
-use crate::aiseg::helper::{parse_f64_from_html, truncate_to_i64};
-use crate::aiseg::html_parsing::{parse_consumption_device, parse_generation_details};
+use crate::aiseg::parser_adapters::ParserAdapterBuilder;
+use crate::aiseg::parser_traits::HtmlParser;
 use crate::model::PowerStatusBreakdownMetric;
 
 /// Parses total power metrics from the main electricity flow page.
@@ -15,9 +15,9 @@ use crate::model::PowerStatusBreakdownMetric;
 /// # Returns
 /// Tuple of (generation_kw, consumption_kw)
 pub fn parse_total_power(document: &Html) -> Result<(f64, f64)> {
-    let generation = parse_f64_from_html(document, "#g_capacity")?;
-    let consumption = parse_f64_from_html(document, "#u_capacity")?;
-    Ok((generation, consumption))
+    // Use trait-based parser adapter
+    let parser = ParserAdapterBuilder::total_power();
+    parser.parse(document)
 }
 
 /// Parses generation source details from the main page.
@@ -28,11 +28,9 @@ pub fn parse_total_power(document: &Html) -> Result<(f64, f64)> {
 /// # Returns
 /// Vector of (source_name, value_in_watts) tuples
 pub fn parse_generation_sources(document: &Html) -> Result<Vec<(String, f64)>> {
-    let details = parse_generation_details(document, 4)?;
-    Ok(details
-        .into_iter()
-        .map(|(name, kw)| (name, kw * 1000.0))
-        .collect())
+    // Use trait-based parser adapter
+    let parser = ParserAdapterBuilder::generation_sources();
+    parser.parse(document)
 }
 
 /// Parses a consumption detail page.
@@ -43,24 +41,9 @@ pub fn parse_generation_sources(document: &Html) -> Result<Vec<(String, f64)>> {
 /// # Returns
 /// Vector of consumption metrics found on the page
 pub fn parse_consumption_page(document: &Html) -> Result<Vec<PowerStatusBreakdownMetric>> {
-    let mut items = Vec::new();
-
-    for i in 1..=10 {
-        let stage_id = format!("#stage_{}", i);
-        match parse_consumption_device(document, &stage_id)? {
-            Some((name, watts)) => {
-                items.push(PowerStatusBreakdownMetric {
-                    measurement: crate::model::Measurement::Power,
-                    category: crate::model::PowerStatusBreakdownMetricCategory::Consumption,
-                    name: format!("{}({})", name, crate::model::Unit::Watt),
-                    value: truncate_to_i64(watts),
-                });
-            }
-            None => break,
-        }
-    }
-
-    Ok(items)
+    // Use trait-based parser adapter
+    let parser = ParserAdapterBuilder::consumption_page();
+    parser.parse(document)
 }
 
 /// Checks if two consumption pages have the same device names.

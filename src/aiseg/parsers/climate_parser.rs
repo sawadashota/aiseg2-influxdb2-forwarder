@@ -1,13 +1,21 @@
 //! HTML parsing for AiSEG2 climate pages.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Local};
 use scraper::Html;
 
-use crate::aiseg::helper::html_selector;
-use crate::aiseg::html_parsing::extract_numeric_from_digit_elements;
-use crate::aiseg::metrics::climate::create_climate_metrics;
+use crate::aiseg::parser_adapters::ParserAdapterBuilder;
+use crate::aiseg::parser_traits::ContextualHtmlParser;
 use crate::model::ClimateStatusMetric;
+
+#[cfg(test)]
+use crate::aiseg::helper::html_selector;
+#[cfg(test)]
+use crate::aiseg::html_parsing::extract_numeric_from_digit_elements;
+#[cfg(test)]
+use crate::aiseg::metrics::climate::create_climate_metrics;
+#[cfg(test)]
+use anyhow::Context;
 
 /// Parses climate data from a specific base element.
 ///
@@ -18,7 +26,8 @@ use crate::model::ClimateStatusMetric;
 ///
 /// # Returns
 /// Array of [temperature, humidity] metrics for the location
-pub fn parse_climate_location(
+#[cfg(test)]
+fn parse_climate_location(
     document: &Html,
     base_id: &str,
     timestamp: DateTime<Local>,
@@ -75,19 +84,9 @@ pub fn parse_climate_page(
     document: &Html,
     timestamp: DateTime<Local>,
 ) -> Result<Vec<ClimateStatusMetric>> {
-    let mut metrics = Vec::new();
-
-    for i in 1..=3 {
-        let base_id = format!("#base{}_1", i);
-        match parse_climate_location(document, &base_id, timestamp) {
-            Ok(location_metrics) => {
-                metrics.extend(location_metrics);
-            }
-            Err(_) => break, // No more locations on this page
-        }
-    }
-
-    Ok(metrics)
+    // Use trait-based parser adapter
+    let parser = ParserAdapterBuilder::climate_page();
+    parser.parse_with_context(document, timestamp)
 }
 
 #[cfg(test)]

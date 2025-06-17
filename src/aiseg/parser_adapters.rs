@@ -51,7 +51,11 @@ impl ContextualHtmlParser for ClimatePageParserAdapter {
     type Output = Vec<ClimateStatusMetric>;
     type Context = DateTime<Local>;
 
-    fn parse_with_context(&self, document: &Html, timestamp: Self::Context) -> Result<Self::Output> {
+    fn parse_with_context(
+        &self,
+        document: &Html,
+        timestamp: Self::Context,
+    ) -> Result<Self::Output> {
         parse_climate_page(document, timestamp)
     }
 }

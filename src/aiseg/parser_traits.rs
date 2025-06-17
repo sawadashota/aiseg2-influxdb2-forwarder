@@ -14,7 +14,7 @@ use scraper::{ElementRef, Html};
 /// use anyhow::Result;
 ///
 /// struct PowerParser;
-/// 
+///
 /// impl HtmlParser for PowerParser {
 ///     type Output = Vec<(String, f64)>;
 ///     
@@ -141,10 +141,12 @@ mod tests {
 
     #[test]
     fn test_parse_context() {
-        let context = ParseContext::new("TestOperation")
-            .with_context("additional info");
-        
+        let context = ParseContext::new("TestOperation").with_context("additional info");
+
         let message = context.error_message("something went wrong");
-        assert_eq!(message, "TestOperation: something went wrong (additional info)");
+        assert_eq!(
+            message,
+            "TestOperation: something went wrong (additional info)"
+        );
     }
 }

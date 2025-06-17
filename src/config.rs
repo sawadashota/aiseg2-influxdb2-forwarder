@@ -65,6 +65,26 @@ fn default_task_timeout_seconds() -> u64 {
     10
 }
 
+/// Default number of consecutive failures before opening circuit (5).
+fn default_circuit_breaker_failure_threshold() -> u32 {
+    5
+}
+
+/// Default recovery timeout in seconds (60).
+fn default_circuit_breaker_recovery_timeout_seconds() -> u64 {
+    60
+}
+
+/// Default number of successful calls to close circuit from half-open (3).
+fn default_circuit_breaker_half_open_success_threshold() -> u32 {
+    3
+}
+
+/// Default number of failures allowed in half-open before reopening (1).
+fn default_circuit_breaker_half_open_failure_threshold() -> u32 {
+    1
+}
+
 /// Configuration for metric collection intervals and behavior.
 ///
 /// Controls how frequently different types of metrics are collected
@@ -93,6 +113,34 @@ pub struct CollectorConfig {
     /// Default: 10 seconds
     #[serde(default = "default_task_timeout_seconds")]
     pub task_timeout_seconds: u64,
+}
+
+/// Configuration for circuit breaker behavior.
+///
+/// Controls how the circuit breaker responds to failures to prevent
+/// cascading failures and reduce load on failing systems.
+/// Loaded from environment variables with CIRCUIT_BREAKER_ prefix.
+#[derive(Deserialize, Debug)]
+pub struct CircuitBreakerConfig {
+    /// Number of consecutive failures before opening circuit
+    /// Default: 5
+    #[serde(default = "default_circuit_breaker_failure_threshold")]
+    pub failure_threshold: u32,
+
+    /// How long to wait before attempting recovery (in seconds)
+    /// Default: 60
+    #[serde(default = "default_circuit_breaker_recovery_timeout_seconds")]
+    pub recovery_timeout_seconds: u64,
+
+    /// Number of successful calls needed to close circuit from half-open
+    /// Default: 3
+    #[serde(default = "default_circuit_breaker_half_open_success_threshold")]
+    pub half_open_success_threshold: u32,
+
+    /// Number of failures allowed in half-open before reopening
+    /// Default: 1
+    #[serde(default = "default_circuit_breaker_half_open_failure_threshold")]
+    pub half_open_failure_threshold: u32,
 }
 
 /// Loads collector configuration from environment variables.
@@ -177,6 +225,24 @@ pub fn load_influx_config() -> Result<InfluxConfig> {
     match envy::prefixed("INFLUXDB_").from_env::<InfluxConfig>() {
         Ok(config) => Ok(config),
         Err(err) => Err(anyhow!("Failed to load InfluxConfig: {}", err)),
+    }
+}
+
+/// Loads circuit breaker configuration from environment variables.
+///
+/// Reads environment variables with CIRCUIT_BREAKER_ prefix:
+/// - `CIRCUIT_BREAKER_FAILURE_THRESHOLD`: Failures before opening (default: 5)
+/// - `CIRCUIT_BREAKER_RECOVERY_TIMEOUT_SECONDS`: Recovery timeout (default: 60)
+/// - `CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD`: Successes to close (default: 3)
+/// - `CIRCUIT_BREAKER_HALF_OPEN_FAILURE_THRESHOLD`: Failures to reopen (default: 1)
+///
+/// # Returns
+/// - `Ok(CircuitBreakerConfig)` with loaded or default values
+/// - `Err` if environment variables contain invalid values
+pub fn load_circuit_breaker_config() -> Result<CircuitBreakerConfig> {
+    match envy::prefixed("CIRCUIT_BREAKER_").from_env::<CircuitBreakerConfig>() {
+        Ok(config) => Ok(config),
+        Err(err) => Err(anyhow!("Failed to load CircuitBreakerConfig: {}", err)),
     }
 }
 
@@ -408,6 +474,68 @@ mod tests {
                 assert!(result.is_err());
                 let err = result.unwrap_err();
                 assert!(err.to_string().contains("Failed to load InfluxConfig"));
+            },
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_load_circuit_breaker_config() {
+        // Save original values
+        let keys = [
+            "CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+            "CIRCUIT_BREAKER_RECOVERY_TIMEOUT_SECONDS",
+            "CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD",
+            "CIRCUIT_BREAKER_HALF_OPEN_FAILURE_THRESHOLD",
+        ];
+        let originals: Vec<(String, Result<String, VarError>)> = keys
+            .iter()
+            .map(|&key| (key.to_string(), std::env::var(key)))
+            .collect();
+
+        // Set test values
+        std::env::set_var("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "3");
+        std::env::set_var("CIRCUIT_BREAKER_RECOVERY_TIMEOUT_SECONDS", "30");
+        std::env::set_var("CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD", "2");
+        std::env::set_var("CIRCUIT_BREAKER_HALF_OPEN_FAILURE_THRESHOLD", "2");
+
+        let result = load_circuit_breaker_config();
+
+        // Restore original values
+        for (key, original) in originals {
+            match original {
+                Ok(val) => std::env::set_var(&key, val),
+                Err(_) => std::env::remove_var(&key),
+            }
+        }
+
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.failure_threshold, 3);
+        assert_eq!(config.recovery_timeout_seconds, 30);
+        assert_eq!(config.half_open_success_threshold, 2);
+        assert_eq!(config.half_open_failure_threshold, 2);
+    }
+
+    #[test]
+    #[serial]
+    fn test_load_circuit_breaker_config_defaults() {
+        // Temporarily clear circuit breaker environment variables
+        without_env_vars(
+            &[
+                "CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+                "CIRCUIT_BREAKER_RECOVERY_TIMEOUT_SECONDS",
+                "CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD",
+                "CIRCUIT_BREAKER_HALF_OPEN_FAILURE_THRESHOLD",
+            ],
+            || {
+                let result = load_circuit_breaker_config();
+                assert!(result.is_ok());
+                let config = result.unwrap();
+                assert_eq!(config.failure_threshold, 5);
+                assert_eq!(config.recovery_timeout_seconds, 60);
+                assert_eq!(config.half_open_success_threshold, 3);
+                assert_eq!(config.half_open_failure_threshold, 1);
             },
         );
     }

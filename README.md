@@ -34,6 +34,39 @@ make start
 
 then, open `http://localhost:3030` in your browser.
 
+## Configuration
+
+### Environment Variables
+
+#### Required Variables
+- `AISEG2_URL`: Base URL of your AiSEG2 system
+- `AISEG2_USER`: Username for AiSEG2 authentication
+- `AISEG2_PASSWORD`: Password for AiSEG2 authentication
+- `INFLUXDB_URL`: InfluxDB server URL
+- `INFLUXDB_TOKEN`: InfluxDB authentication token
+- `INFLUXDB_ORG`: InfluxDB organization
+- `INFLUXDB_BUCKET`: InfluxDB bucket for storing metrics
+
+#### Optional Variables
+- `LOG_LEVEL`: Logging level (default: `info`)
+- `COLLECTOR_STATUS_INTERVAL_SEC`: Interval for status metrics collection (default: `5`)
+- `COLLECTOR_TOTAL_INTERVAL_SEC`: Interval for total metrics collection (default: `60`)
+- `COLLECTOR_TOTAL_INITIAL_DAYS`: Days of historical data to collect on startup (default: `30`)
+
+#### Circuit Breaker Configuration
+The application includes a circuit breaker pattern to handle collector failures gracefully:
+
+- `CIRCUIT_BREAKER_FAILURE_THRESHOLD`: Number of consecutive failures before opening circuit (default: `5`)
+- `CIRCUIT_BREAKER_RECOVERY_TIMEOUT_SECONDS`: Seconds to wait before attempting recovery (default: `60`)
+- `CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD`: Successful calls needed to close circuit (default: `3`)
+- `CIRCUIT_BREAKER_HALF_OPEN_FAILURE_THRESHOLD`: Failures allowed in half-open state before reopening (default: `1`)
+
+When a collector fails repeatedly, the circuit breaker will:
+1. Open after the failure threshold is reached, preventing further calls
+2. Wait for the recovery timeout before entering half-open state
+3. Allow limited calls in half-open state to test recovery
+4. Close fully after sufficient successful calls or reopen on failure
+
 ## Developer Guidelines
 
 ### Testing Principles

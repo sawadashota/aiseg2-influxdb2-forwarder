@@ -3,7 +3,7 @@
 //! This module provides a centralized location for all test utilities, mock implementations,
 //! and test data builders used throughout the codebase.
 
-#![cfg(test)]
+#![allow(dead_code)]
 
 pub mod builders;
 pub mod config;

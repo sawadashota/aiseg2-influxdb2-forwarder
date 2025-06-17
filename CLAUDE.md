@@ -41,16 +41,20 @@ Each collector:
 - 10-second timeout for metric collection (configurable via `COLLECTOR_TASK_TIMEOUT_SECONDS`)
 - Graceful shutdown on SIGTERM/SIGINT signals
 - Failed tasks are automatically restarted
+- Circuit breaker pattern protects each collector from cascading failures
 
 ### Configuration
 All configuration is via environment variables with these prefixes:
 - `AISEG2_*` - AiSEG2 connection settings
 - `INFLUXDB_*` - InfluxDB connection settings
 - `COLLECTOR_*` - Collection intervals and behavior
+- `CIRCUIT_BREAKER_*` - Circuit breaker thresholds and timeouts
 - `LOG_LEVEL` - Logging configuration
 
 ### Key Source Files
 - `src/main.rs` - Application entry point and task orchestration
 - `src/config.rs` - Configuration management
 - `src/collector/mod.rs` - Collector trait and implementations
+- `src/collector/circuit_protected.rs` - Circuit breaker protected collector wrapper
+- `src/circuit_breaker.rs` - Circuit breaker state machine implementation
 - `src/influxdb.rs` - InfluxDB client wrapper

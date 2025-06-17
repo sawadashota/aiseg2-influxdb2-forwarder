@@ -36,7 +36,7 @@ impl MockMetricCollector {
         Self {
             should_fail: true,
             error_message: error_message.into(),
-            create_data: Box::new(|| Vec::new()),
+            create_data: Box::new(Vec::new),
         }
     }
 
@@ -127,12 +127,12 @@ impl MetricCollector for TimeoutMockCollector {
     }
 }
 
+/// Type alias for the timestamp-based result factory function.
+type TimestampResultFactory = Box<dyn Fn() -> Vec<Box<dyn DataPointBuilder>> + Send + Sync>;
+
 /// A mock collector that returns different results based on the timestamp.
 pub struct TimeSensitiveMockCollector {
-    results: Vec<(
-        DateTime<Local>,
-        Box<dyn Fn() -> Vec<Box<dyn DataPointBuilder>> + Send + Sync>,
-    )>,
+    results: Vec<(DateTime<Local>, TimestampResultFactory)>,
 }
 
 impl TimeSensitiveMockCollector {

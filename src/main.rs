@@ -18,6 +18,8 @@
 //! - Timeout protection for hung tasks
 
 mod aiseg;
+mod circuit_breaker;
+mod collector;
 mod config;
 mod influxdb;
 mod model;
@@ -25,6 +27,8 @@ mod model;
 #[cfg(test)]
 mod test_utils;
 
+use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig as CircuitConfig};
+use crate::collector::circuit_protected::CircuitProtectedCollector;
 use crate::model::{batch_collect_metrics, MetricCollector};
 use chrono::{Local, NaiveTime};
 use std::future::IntoFuture;
@@ -49,28 +53,61 @@ async fn main() {
 
     let collector_config =
         Arc::new(config::load_collector_config().expect("Failed to load CollectorConfig"));
+    let circuit_breaker_config =
+        config::load_circuit_breaker_config().expect("Failed to load CircuitBreakerConfig");
     let influx_config = config::load_influx_config().expect("Failed to load InfluxConfig");
     let influx_client = Arc::new(influxdb::Client::new(influx_config));
 
     let aiseg_config = config::load_aiseg_config().expect("Failed to load AisegConfig");
     let aiseg_client = Arc::new(aiseg::Client::new(aiseg_config));
 
+    // Convert circuit breaker config to internal format
+    let circuit_config = CircuitConfig {
+        failure_threshold: circuit_breaker_config.failure_threshold,
+        recovery_timeout: Duration::from_secs(circuit_breaker_config.recovery_timeout_seconds),
+        half_open_success_threshold: circuit_breaker_config.half_open_success_threshold,
+        half_open_failure_threshold: circuit_breaker_config.half_open_failure_threshold,
+    };
+
+    // Helper to create circuit-protected collectors
+    let create_protected_collector =
+        |name: &str, collector: Box<dyn MetricCollector>| -> Box<dyn MetricCollector> {
+            let circuit_breaker = CircuitBreaker::new(name.to_string(), circuit_config.clone());
+            Box::new(CircuitProtectedCollector::new(
+                name.to_string(),
+                Arc::from(collector),
+                circuit_breaker,
+            ))
+        };
+
     // Initialize collectors for daily totals (60-second interval)
     let total_collectors: Arc<Vec<Box<dyn MetricCollector>>> = Arc::new(vec![
-        Box::new(aiseg::DailyTotalMetricCollector::new(Arc::clone(
-            &aiseg_client,
-        ))),
-        Box::new(aiseg::CircuitDailyTotalMetricCollector::new(Arc::clone(
-            &aiseg_client,
-        ))),
+        create_protected_collector(
+            "DailyTotalMetricCollector",
+            Box::new(aiseg::DailyTotalMetricCollector::new(Arc::clone(
+                &aiseg_client,
+            ))),
+        ),
+        create_protected_collector(
+            "CircuitDailyTotalMetricCollector",
+            Box::new(aiseg::CircuitDailyTotalMetricCollector::new(Arc::clone(
+                &aiseg_client,
+            ))),
+        ),
     ]);
 
     // Initialize collectors for real-time status (5-second interval)
     let status_collectors: Arc<Vec<Box<dyn MetricCollector>>> = Arc::new(vec![
-        Box::new(aiseg::PowerMetricCollector::new(Arc::clone(&aiseg_client))),
-        Box::new(aiseg::ClimateMetricCollector::new(Arc::clone(
-            &aiseg_client,
-        ))),
+        create_protected_collector(
+            "PowerMetricCollector",
+            Box::new(aiseg::PowerMetricCollector::new(Arc::clone(&aiseg_client))),
+        ),
+        create_protected_collector(
+            "ClimateMetricCollector",
+            Box::new(aiseg::ClimateMetricCollector::new(Arc::clone(
+                &aiseg_client,
+            ))),
+        ),
     ]);
 
     // Spawn background task to collect historical data

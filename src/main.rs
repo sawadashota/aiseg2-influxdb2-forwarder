@@ -21,6 +21,7 @@ mod aiseg;
 mod circuit_breaker;
 mod collector;
 mod config;
+mod error;
 mod influxdb;
 mod model;
 

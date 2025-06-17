@@ -3,7 +3,7 @@
 //! This module provides a trait-based abstraction for parsing HTML documents
 //! from AiSEG2 web interface, reducing code duplication across collectors.
 
-use anyhow::Result;
+use crate::error::{AisegError, Result};
 use scraper::Html;
 
 /// Core trait for parsing HTML content into domain-specific types.
@@ -11,14 +11,15 @@ use scraper::Html;
 /// # Example
 /// ```no_run
 /// use scraper::Html;
-/// use anyhow::Result;
+/// use crate::error::{AisegError, Result};
+/// use crate::aiseg::parser_traits::HtmlParser;
 ///
 /// struct PowerParser;
 ///
 /// impl HtmlParser for PowerParser {
 ///     type Output = Vec<(String, f64)>;
 ///     
-///     fn parse(&self, document: &Html) -> Result<Self::Output> {
+///     fn parse(&self, document: &Html) -> Result<Self::Output, AisegError> {
 ///         // Parse power values from HTML
 ///         Ok(vec![("Solar".to_string(), 1500.0)])
 ///     }
@@ -29,7 +30,7 @@ pub trait HtmlParser {
     type Output;
 
     /// Parse HTML document into the output type
-    fn parse(&self, document: &Html) -> Result<Self::Output>;
+    fn parse(&self, document: &Html) -> Result<Self::Output, AisegError>;
 }
 
 /// Trait for parsers that need additional context for parsing.
@@ -43,7 +44,11 @@ pub trait ContextualHtmlParser {
     type Context;
 
     /// Parse HTML document with context into the output type
-    fn parse_with_context(&self, document: &Html, context: Self::Context) -> Result<Self::Output>;
+    fn parse_with_context(
+        &self,
+        document: &Html,
+        context: Self::Context,
+    ) -> Result<Self::Output, AisegError>;
 }
 
 #[cfg(test)]
@@ -55,7 +60,7 @@ mod tests {
     impl HtmlParser for TestParser {
         type Output = String;
 
-        fn parse(&self, _document: &Html) -> Result<Self::Output> {
+        fn parse(&self, _document: &Html) -> Result<Self::Output, AisegError> {
             Ok("test".to_string())
         }
     }
@@ -78,7 +83,7 @@ mod tests {
             &self,
             _document: &Html,
             context: Self::Context,
-        ) -> Result<Self::Output> {
+        ) -> Result<Self::Output, AisegError> {
             Ok(format!("test with context: {}", context))
         }
     }

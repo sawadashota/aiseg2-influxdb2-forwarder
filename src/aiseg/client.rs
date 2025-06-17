@@ -5,7 +5,7 @@
 //! digest auth for all API endpoints.
 
 use crate::config;
-use anyhow::{anyhow, Context, Result};
+use crate::error::{AisegError, Result};
 use diqwest::WithDigestAuth;
 use reqwest::Client as HttpClient;
 
@@ -97,7 +97,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get(&self, path: &str) -> Result<String> {
+    pub async fn get(&self, path: &str) -> Result<String, AisegError> {
         let url = format!("{}{}", self.config.url, path);
         let response = self
             .http_client
@@ -105,21 +105,15 @@ impl Client {
             .header("user-agent", "reqwest")
             .send_with_digest_auth(&self.config.user, &self.config.password)
             .await
-            .context("Failed to send GET request")?;
+            .map_err(|e| AisegError::DigestAuth(e.to_string()))?;
 
         if response.status().is_success() {
-            let body = response
-                .text()
-                .await
-                .context("Failed to read response body")?;
+            let body = response.text().await?;
             Ok(body)
         } else {
             let status = response.status();
-            let body = response
-                .text()
-                .await
-                .context("Failed to read response body")?;
-            Err(anyhow!("Request failed with status: {}\n{}", status, body))
+            let body = response.text().await.unwrap_or_default();
+            Err(AisegError::server_error(status, body))
         }
     }
 }
@@ -181,9 +175,7 @@ mod tests {
 
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("Request failed with status: 404"));
+        assert!(error.to_string().contains("server error (status 404)"));
         assert!(error.to_string().contains("Not Found"));
     }
 
@@ -207,9 +199,7 @@ mod tests {
 
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("Request failed with status: 500"));
+        assert!(error.to_string().contains("server error (status 500)"));
         assert!(error.to_string().contains("Internal Server Error"));
     }
 
@@ -281,6 +271,6 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Failed to send GET request"));
+            .contains("Digest auth request failed"));
     }
 }

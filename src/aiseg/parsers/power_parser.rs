@@ -48,24 +48,6 @@ pub fn parse_consumption_page(
     parser.parse(document)
 }
 
-/// Checks if two consumption pages have the same device names.
-///
-/// Used to detect when pagination has wrapped around.
-#[allow(dead_code)]
-pub fn has_duplicate_device_names(
-    previous: &[PowerStatusBreakdownMetric],
-    current: &[PowerStatusBreakdownMetric],
-) -> bool {
-    if previous.is_empty() || current.is_empty() {
-        return false;
-    }
-
-    let prev_names: Vec<&str> = previous.iter().map(|m| m.name.as_str()).collect();
-    let curr_names: Vec<&str> = current.iter().map(|m| m.name.as_str()).collect();
-
-    prev_names == curr_names
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,35 +87,5 @@ mod tests {
         assert_eq!(sources.len(), 2);
         assert_eq!(sources[0], ("太陽光".to_string(), 2500.0));
         assert_eq!(sources[1], ("燃料電池".to_string(), 500.0));
-    }
-
-    #[test]
-    fn test_has_duplicate_device_names() {
-        let metrics1 = vec![
-            PowerStatusBreakdownMetric {
-                measurement: crate::model::Measurement::Power,
-                category: crate::model::PowerStatusBreakdownMetricCategory::Consumption,
-                name: "Device1(W)".to_string(),
-                value: 100,
-            },
-            PowerStatusBreakdownMetric {
-                measurement: crate::model::Measurement::Power,
-                category: crate::model::PowerStatusBreakdownMetricCategory::Consumption,
-                name: "Device2(W)".to_string(),
-                value: 200,
-            },
-        ];
-
-        let metrics2 = metrics1.clone();
-        let metrics3 = vec![PowerStatusBreakdownMetric {
-            measurement: crate::model::Measurement::Power,
-            category: crate::model::PowerStatusBreakdownMetricCategory::Consumption,
-            name: "Device3(W)".to_string(),
-            value: 300,
-        }];
-
-        assert!(has_duplicate_device_names(&metrics1, &metrics2));
-        assert!(!has_duplicate_device_names(&metrics1, &metrics3));
-        assert!(!has_duplicate_device_names(&[], &metrics1));
     }
 }

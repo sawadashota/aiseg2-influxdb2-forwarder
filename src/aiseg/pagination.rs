@@ -52,23 +52,6 @@ pub struct Paginator<'a, T> {
 }
 
 impl<'a, T: PageItem> Paginator<'a, T> {
-    /// Creates a new paginator with the given configuration and functions.
-    #[allow(dead_code)]
-    pub fn new<F, P>(config: PaginationConfig, fetch_fn: F, parse_fn: P) -> Self
-    where
-        F: Fn(usize) -> Pin<Box<dyn Future<Output = Result<String, AisegError>> + Send + 'a>>
-            + Send
-            + Sync
-            + 'a,
-        P: Fn(&Html) -> Result<Vec<T>, AisegError> + Send + Sync + 'a,
-    {
-        Self {
-            config,
-            fetch_fn: Box::new(fetch_fn),
-            parse_fn: Box::new(parse_fn),
-        }
-    }
-
     /// Collects all items from all pages.
     pub async fn collect_all(&self) -> Result<Vec<T>, AisegError> {
         let mut all_items = Vec::new();
@@ -132,13 +115,6 @@ impl<'a, T: PageItem> PaginatorBuilder<'a, T> {
     /// Sets the maximum number of pages to fetch.
     pub fn max_pages(mut self, max_pages: usize) -> Self {
         self.config.max_pages = max_pages;
-        self
-    }
-
-    /// Sets the starting page number.
-    #[allow(dead_code)]
-    pub fn start_page(mut self, start_page: usize) -> Self {
-        self.config.start_page = start_page;
         self
     }
 

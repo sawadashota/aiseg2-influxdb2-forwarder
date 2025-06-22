@@ -2,8 +2,8 @@ use crate::aiseg::client::Client;
 use crate::aiseg::helper::day_of_beginning;
 use crate::aiseg::html_parsing::parse_graph_page;
 use crate::aiseg::query_builder::make_daily_total_query;
+use crate::error::{AisegError, CollectorError, Result};
 use crate::model::{DataPointBuilder, Measurement, MetricCollector, PowerTotalMetric, Unit};
-use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use scraper::Html;
@@ -44,8 +44,8 @@ impl DailyTotalMetricCollector {
         date: DateTime<Local>,
         graph_id: &str,
         unit: Unit,
-    ) -> Result<PowerTotalMetric> {
-        let the_day = day_of_beginning(&date)?;
+    ) -> Result<PowerTotalMetric, AisegError> {
+        let the_day = day_of_beginning(&date).map_err(AisegError::Parse)?;
         let response = self
             .client
             .get(&format!(
@@ -57,11 +57,12 @@ impl DailyTotalMetricCollector {
         let document = Html::parse_document(&response);
 
         // Use the new parse_graph_page utility
-        let (name, _watts_value) = parse_graph_page(&document, None, None)?;
+        let (name, _watts_value) =
+            parse_graph_page(&document, None, None).map_err(AisegError::Parse)?;
         // For daily totals, we need the kWh value, not watts
         // So we'll use the extract_value function directly
         use crate::aiseg::html_parsing::extract_value;
-        let value: f64 = extract_value(&document, "#val_kwh")?;
+        let value: f64 = extract_value(&document, "#val_kwh").map_err(AisegError::Parse)?;
 
         Ok(PowerTotalMetric {
             measurement: Measurement::DailyTotal,
@@ -91,30 +92,41 @@ impl MetricCollector for DailyTotalMetricCollector {
     /// # Returns
     ///
     /// A vector of DataPointBuilder instances or an error if any collection fails
-    async fn collect(&self, timestamp: DateTime<Local>) -> Result<Vec<Box<dyn DataPointBuilder>>> {
-        Ok(vec![
+    async fn collect(
+        &self,
+        timestamp: DateTime<Local>,
+    ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
+        let metrics = vec![
             // DailyTotalPowerGeneration
             self.collect_by_graph_id(timestamp, "51111", Unit::Kwh)
-                .await?,
+                .await
+                .map_err(CollectorError::Source)?,
             // DailyTotalPowerConsumption
             self.collect_by_graph_id(timestamp, "52111", Unit::Kwh)
-                .await?,
+                .await
+                .map_err(CollectorError::Source)?,
             // DailyTotalPowerBuying
             self.collect_by_graph_id(timestamp, "53111", Unit::Kwh)
-                .await?,
+                .await
+                .map_err(CollectorError::Source)?,
             // DailyTotalPowerSelling
             self.collect_by_graph_id(timestamp, "54111", Unit::Kwh)
-                .await?,
+                .await
+                .map_err(CollectorError::Source)?,
             // DailyTotalHotWaterConsumption
             self.collect_by_graph_id(timestamp, "55111", Unit::Liter)
-                .await?,
+                .await
+                .map_err(CollectorError::Source)?,
             // DailyTotalGasConsumption
             self.collect_by_graph_id(timestamp, "57111", Unit::CubicMeter)
-                .await?,
-        ]
-        .into_iter()
-        .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
-        .collect())
+                .await
+                .map_err(CollectorError::Source)?,
+        ];
+
+        Ok(metrics
+            .into_iter()
+            .map(|x| Box::new(x) as Box<dyn DataPointBuilder>)
+            .collect())
     }
 }
 
@@ -434,7 +446,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Element not found"));
+                .contains("HTML parsing error"));
         }
 
         #[tokio::test]
@@ -471,7 +483,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Element not found"));
+                .contains("HTML parsing error"));
         }
 
         #[tokio::test]
@@ -502,7 +514,10 @@ mod tests {
                 .await;
 
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("Failed to parse"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("HTML parsing error"));
         }
 
         #[tokio::test]
@@ -535,7 +550,7 @@ mod tests {
             assert!(result
                 .unwrap_err()
                 .to_string()
-                .contains("Request failed with status: 500"));
+                .contains("server error (status 500)"));
         }
 
         #[tokio::test]
@@ -621,7 +636,7 @@ mod tests {
 
             assert!(result.is_err());
             match result {
-                Err(e) => assert!(e.to_string().contains("Request failed with status: 503")),
+                Err(e) => assert!(e.to_string().contains("failed to collect from source")),
                 Ok(_) => panic!("Expected error but got success"),
             }
         }

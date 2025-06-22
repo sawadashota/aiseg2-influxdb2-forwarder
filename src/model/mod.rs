@@ -22,8 +22,8 @@ pub use utilities::batch_collect_metrics;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{CollectorError, Result};
     use crate::test_utils::mocks::{FailingDataPointBuilder, MockMetricCollector};
-    use anyhow::Result;
     use chrono::{Local, TimeZone};
 
     // Helper function to create a test timestamp
@@ -219,7 +219,7 @@ mod tests {
                 async fn collect(
                     &self,
                     _timestamp: chrono::DateTime<Local>,
-                ) -> Result<Vec<Box<dyn DataPointBuilder>>> {
+                ) -> Result<Vec<Box<dyn DataPointBuilder>>, CollectorError> {
                     Ok(vec![
                         Box::new(PowerStatusMetric {
                             measurement: Measurement::Power,

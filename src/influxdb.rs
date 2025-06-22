@@ -15,7 +15,7 @@
 //! strategies as needed.
 
 use crate::config::InfluxConfig;
-use anyhow::Result;
+use crate::error::{Result, StorageError};
 use futures::prelude::stream;
 
 /// InfluxDB2 client wrapper for writing metrics data.
@@ -104,11 +104,21 @@ impl Client {
     /// ];
     /// client.write(points).await?;
     /// ```
-    pub async fn write(&self, points: Vec<influxdb2::models::DataPoint>) -> Result<()> {
-        Ok(self
-            .client
+    pub async fn write(
+        &self,
+        points: Vec<influxdb2::models::DataPoint>,
+    ) -> Result<(), StorageError> {
+        self.client
             .write(self.bucket.as_str(), stream::iter(points))
-            .await?)
+            .await
+            .map_err(|e| {
+                // Check for specific error types
+                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                    StorageError::AuthFailed
+                } else {
+                    StorageError::Client(e)
+                }
+            })
     }
 }
 
@@ -235,7 +245,7 @@ mod tests {
 
             assert!(result.is_err());
             let err_str = result.unwrap_err().to_string();
-            assert!(err_str.contains("401") || err_str.contains("Unauthorized"));
+            assert!(err_str.contains("InfluxDB authentication failed"));
         }
 
         #[tokio::test]
